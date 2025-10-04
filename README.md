@@ -10,6 +10,10 @@ Auto-extracting memory system for Claude Desktop with semantic search powered by
 - **Configurable Providers**: Switch between local and API-based embeddings
 - **Auto-Pruning**: Maintains memory limit by removing oldest entries
 
+## Attribution
+
+This project's memory management system was derived from [gramanoid's Adaptive Memory filter for Open WebUI](https://github.com/gramanoid/owui-adaptive-memory). The original filter provided the foundation for LLM-based memory extraction, embedding similarity, and semantic deduplication. This implementation refactors those concepts into a standalone MCP server / REST API with simplified architecture for broader platform compatibility.
+
 ## Prerequisites
 
 - Python 3.11+
