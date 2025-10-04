@@ -1,6 +1,6 @@
 # SmartMemory MCP Server
 
-Auto-extracting memory system for Claude Desktop with semantic search powered by Pinecone.
+Auto-extracting memory system for Claude Desktop with semantic search powered by Pinecone and LLM analysis.
 
 ## Features
 
