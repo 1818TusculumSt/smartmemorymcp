@@ -15,7 +15,7 @@ Auto-extracting memory system for Claude Desktop with semantic search powered by
 - Python 3.11+
 - Pinecone account and API key
 - OpenAI API key (or compatible LLM API)
-- Claude Desktop
+- Claude Desktop for Windows
 
 ## Installation
 
