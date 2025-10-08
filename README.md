@@ -1,3 +1,5 @@
+<img width="1024" height="576" alt="Adobe Express - file" src="https://github.com/user-attachments/assets/cc661443-4fdf-41bd-a16d-48469494c97a" />
+
 # SmartMemory MCP Server
 
 Auto-extracting memory system for Claude Desktop with semantic search powered by Pinecone and LLM analysis.
