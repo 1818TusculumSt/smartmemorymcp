@@ -131,11 +131,14 @@ class EmbeddingProvider:
             "X-Pinecone-API-Version": "2024-10"
         }
         
+        # Add dimension parameter for llama-text-embed-v2 to match index
+        params = {"input_type": "passage"}
+        if settings.EMBEDDING_MODEL == "llama-text-embed-v2":
+            params["dimension"] = 384  # Match existing index dimension
+
         data = {
             "model": settings.EMBEDDING_MODEL,
-            "parameters": {
-                "input_type": "passage"
-            },
+            "parameters": params,
             "inputs": [{"text": text}]
         }
         

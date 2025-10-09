@@ -66,10 +66,10 @@ class MemoryEngine:
             logger.info(f"Using embedding dimension {self.embedding_dim} for {settings.EMBEDDING_MODEL}")
         elif settings.EMBEDDING_PROVIDER == "pinecone":
             pinecone_dims = {
-                "llama-text-embed-v2": 1024,
+                "llama-text-embed-v2": 384,  # Configured to match existing index
                 "multilingual-e5-large": 1024,
             }
-            self.embedding_dim = pinecone_dims.get(settings.EMBEDDING_MODEL, 1024)
+            self.embedding_dim = pinecone_dims.get(settings.EMBEDDING_MODEL, 384)
             logger.info(f"Using Pinecone inference dimension {self.embedding_dim} for {settings.EMBEDDING_MODEL}")
         else:
             self.embedding_dim = 1536
