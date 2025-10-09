@@ -91,7 +91,28 @@ Add the SmartMemory server:
 
 **Important:** Use double backslashes (`\\`) in Windows paths in JSON.
 
-### 4. Restart Claude Desktop
+### 4. (Optional) Create .env File for Manual Testing
+
+If you want to test the server manually (not through Claude Desktop), create a `.env` file in the project directory:
+
+```
+PINECONE_API_KEY=your-pinecone-api-key
+PINECONE_ENVIRONMENT=us-east-1-aws
+PINECONE_INDEX_NAME=smartmemory
+LLM_API_URL=https://api.openai.com/v1/chat/completions
+LLM_API_KEY=your-openai-api-key
+LLM_MODEL=gpt-4o-mini
+EMBEDDING_PROVIDER=local
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+MAX_MEMORIES=200
+DEDUP_THRESHOLD=0.95
+MIN_CONFIDENCE=0.5
+RELEVANCE_THRESHOLD=0.6
+```
+
+**Note:** This is only needed for `python server.py` testing. Claude Desktop passes these values from the JSON config.
+
+### 5. Restart Claude Desktop
 
 Completely quit and restart Claude Desktop for the MCP server to load.
 
