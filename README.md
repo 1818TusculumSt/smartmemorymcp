@@ -1,4 +1,6 @@
-<img width="1024" height="576" alt="Adobe Express - file" src="https://github.com/user-attachments/assets/cc661443-4fdf-41bd-a16d-48469494c97a" />
+<div align="center">
+  <img src="logo.png" alt="SmartMemory Logo" width="400"/>
+</div>
 
 # SmartMemory MCP Server
 
@@ -11,6 +13,11 @@ Auto-extracting memory system for Claude Desktop with semantic search powered by
 - **Deduplication**: Prevents duplicate memories using embedding similarity
 - **Configurable Providers**: Switch between local and API-based embeddings
 - **Auto-Pruning**: Maintains memory limit by removing oldest entries
+- **Multi-User Support**: Track memories per user with user_id filtering
+- **Session Tracking**: Organize memories by conversation with agent_id and run_id
+- **Batch Operations**: Delete multiple memories at once for efficiency
+- **Category Filtering**: Search memories by specific categories/tags
+- **Statistics & Monitoring**: Get real-time stats on memory usage
 
 ## Attribution
 
@@ -90,7 +97,7 @@ Completely quit and restart Claude Desktop for the MCP server to load.
 
 ## Usage
 
-The server provides 4 tools that Claude can use:
+The server provides 6 tools that Claude can use:
 
 ### 1. Extract Memories
 
@@ -102,9 +109,14 @@ Claude uses extract_memories tool in background
 → Stores: "User has a cat named Whiskers"
 ```
 
+**Optional Parameters:**
+- `user_id`: Associate memory with specific user
+- `agent_id`: Track which agent created the memory
+- `run_id`: Link memory to conversation session
+
 ### 2. Search Memories
 
-Search for specific memories:
+Search for specific memories with advanced filtering:
 
 ```
 User: "What do you know about my pets?"
@@ -112,15 +124,23 @@ Claude uses search_memories with query="pets"
 → Returns relevant memories
 ```
 
+**Optional Parameters:**
+- `user_id`: Filter memories by user
+- `agent_id`: Filter memories by agent
+- `categories`: Filter by memory tags (e.g., ["preference", "identity"])
+
 ### 3. Get Relevant Memories
 
-Retrieves contextually relevant memories:
+Retrieves contextually relevant memories above relevance threshold:
 
 ```
 User: "Tell me about my hobbies"
 Claude uses get_relevant_memories
 → Returns hobby-related memories above relevance threshold
 ```
+
+**Optional Parameters:**
+- `user_id`: Filter memories by user
 
 ### 4. Delete Memory
 
@@ -130,6 +150,24 @@ Remove a specific memory by ID:
 User: "Delete that memory about my cat"
 Claude uses delete_memory with memory_id
 → Removes the memory
+```
+
+### 5. Batch Delete Memories
+
+Delete multiple memories at once:
+
+```
+Claude uses batch_delete_memories with memory_ids=["mem_123", "mem_456"]
+→ Deletes both memories efficiently
+```
+
+### 6. Get Stats
+
+View memory system statistics:
+
+```
+Claude uses get_stats
+→ Returns: Total memories, embedding dimension, max capacity
 ```
 
 ## Configuration Options

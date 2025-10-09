@@ -38,6 +38,18 @@ async def list_tools() -> list[Tool]:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Recent conversation history for context (optional)"
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier for memory organization (optional)"
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Agent identifier for memory organization (optional)"
+                    },
+                    "run_id": {
+                        "type": "string",
+                        "description": "Conversation run identifier (optional)"
                     }
                 },
                 "required": ["user_message"]
@@ -56,6 +68,19 @@ async def list_tools() -> list[Tool]:
                     "limit": {
                         "type": "number",
                         "description": "Maximum results to return (default: 5)"
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "Filter by user ID (optional)"
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Filter by agent ID (optional)"
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by memory categories (optional)"
                     }
                 },
                 "required": ["query"]
@@ -74,6 +99,10 @@ async def list_tools() -> list[Tool]:
                     "limit": {
                         "type": "number",
                         "description": "Maximum memories to return (default: 5)"
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "Filter by user ID (optional)"
                     }
                 },
                 "required": ["current_message"]
@@ -92,6 +121,29 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["memory_id"]
             }
+        ),
+        Tool(
+            name="batch_delete_memories",
+            description="Delete multiple memories by IDs",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Array of memory IDs to delete"
+                    }
+                },
+                "required": ["memory_ids"]
+            }
+        ),
+        Tool(
+            name="get_stats",
+            description="Get memory system statistics and status",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
         )
     ]
 
@@ -109,66 +161,111 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         if name == "extract_memories":
             user_message = arguments["user_message"]
             recent_history = arguments.get("recent_history", [])
-            
+            user_id = arguments.get("user_id")
+            agent_id = arguments.get("agent_id")
+            run_id = arguments.get("run_id")
+
             logger.info(f"Extracting memories from: {user_message[:100]}...")
-            result = await memory_engine.extract_and_store(user_message, recent_history)
-            
+            result = await memory_engine.extract_and_store(
+                user_message,
+                recent_history,
+                user_id=user_id,
+                agent_id=agent_id,
+                run_id=run_id
+            )
+
             if not result:
                 return [TextContent(
                     type="text",
                     text="No new memories extracted"
                 )]
-            
+
             return [TextContent(
                 type="text",
                 text=f"Stored {len(result)} new memories"
             )]
-        
+
         elif name == "search_memories":
             query = arguments["query"]
             limit = arguments.get("limit", 5)
-            
+            user_id = arguments.get("user_id")
+            agent_id = arguments.get("agent_id")
+            categories = arguments.get("categories")
+
             logger.info(f"Searching memories for: {query[:100]}...")
-            results = await memory_engine.search(query, limit)
-            
+            results = await memory_engine.search(
+                query,
+                limit,
+                user_id=user_id,
+                agent_id=agent_id,
+                categories=categories
+            )
+
             if not results:
                 return [TextContent(type="text", text="No memories found")]
-            
+
             formatted = "\n".join([
                 f"- {m['content']} (relevance: {m['relevance']:.2f})"
                 for m in results
             ])
-            
+
             return [TextContent(type="text", text=formatted)]
-        
+
         elif name == "get_relevant_memories":
             current_message = arguments["current_message"]
             limit = arguments.get("limit", 5)
-            
+            user_id = arguments.get("user_id")
+
             logger.info(f"Getting relevant memories for: {current_message[:100]}...")
-            results = await memory_engine.get_relevant(current_message, limit)
-            
+            results = await memory_engine.get_relevant(
+                current_message,
+                limit,
+                user_id=user_id
+            )
+
             if not results:
                 return [TextContent(type="text", text="No relevant memories found")]
-            
+
             formatted = "\n".join([
                 f"- {m['content']} (relevance: {m['relevance']:.2f})"
                 for m in results
             ])
-            
+
             return [TextContent(type="text", text=formatted)]
-        
+
         elif name == "delete_memory":
             memory_id = arguments["memory_id"]
-            
+
             logger.info(f"Deleting memory: {memory_id}")
             success = await memory_engine.delete(memory_id)
-            
+
             if success:
                 return [TextContent(type="text", text=f"Deleted memory {memory_id}")]
             else:
                 return [TextContent(type="text", text=f"Failed to delete memory {memory_id}")]
-        
+
+        elif name == "batch_delete_memories":
+            memory_ids = arguments["memory_ids"]
+
+            logger.info(f"Batch deleting {len(memory_ids)} memories")
+            success_count = await memory_engine.batch_delete(memory_ids)
+
+            return [TextContent(
+                type="text",
+                text=f"Deleted {success_count}/{len(memory_ids)} memories"
+            )]
+
+        elif name == "get_stats":
+            logger.info("Getting memory stats")
+            stats = await memory_engine.get_stats()
+
+            formatted = f"Memory Statistics:\n"
+            formatted += f"- Total memories: {stats.get('count', 0)}\n"
+            formatted += f"- Embedding dimension: {stats.get('dimension', 0)}\n"
+            formatted += f"- Max memories: {stats.get('max_memories', 0)}"
+
+            return [TextContent(type="text", text=formatted)]
+
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
     

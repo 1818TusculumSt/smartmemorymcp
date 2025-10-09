@@ -78,52 +78,60 @@ class MemoryEngine:
     async def extract_and_store(
         self,
         user_message: str,
-        recent_history: List[str] = None
+        recent_history: List[str] = None,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        run_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Extract memories from message and store them"""
         logger.info(f"Starting memory extraction for message: {user_message[:100]}...")
-        
+
         memories = await self._extract_memories(user_message, recent_history or [])
-        
+
         if not memories:
             logger.info("No memories extracted from message")
             return []
-        
+
         logger.info(f"Extracted {len(memories)} potential memories")
-        
+
         filtered = [
-            m for m in memories 
+            m for m in memories
             if m.get("confidence", 0) >= settings.MIN_CONFIDENCE
         ]
-        
+
         discarded = len(memories) - len(filtered)
         if discarded > 0:
             logger.info(f"Filtered out {discarded} low-confidence memories (threshold: {settings.MIN_CONFIDENCE})")
-        
+
         if not filtered:
             logger.info("No memories passed confidence filter")
             return []
-        
-        deduplicated = await self._deduplicate(filtered)
-        
+
+        deduplicated = await self._deduplicate(filtered, user_id=user_id)
+
         duplicates = len(filtered) - len(deduplicated)
         if duplicates > 0:
             logger.info(f"Removed {duplicates} duplicate memories")
-        
+
         if not deduplicated:
             logger.info("All memories were duplicates")
             return []
-        
+
         stored = []
         for memory in deduplicated:
-            result = await self._store_memory(memory)
+            result = await self._store_memory(
+                memory,
+                user_id=user_id,
+                agent_id=agent_id,
+                run_id=run_id
+            )
             if result:
                 stored.append(result)
-        
+
         logger.info(f"Successfully stored {len(stored)} new memories")
-        
+
         await self._prune_if_needed()
-        
+
         return stored
     
     async def _extract_memories(
@@ -249,37 +257,41 @@ Return ONLY the JSON array. No other text."""
             logger.error(f"Unexpected error parsing memories: {e}", exc_info=True)
             return []
     
-    async def _deduplicate(self, memories: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _deduplicate(
+        self,
+        memories: List[Dict[str, Any]],
+        user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Remove duplicates using embedding similarity"""
         if not memories:
             return []
-        
+
         logger.debug(f"Deduplicating {len(memories)} memories")
-        
-        existing = await self._get_all_memories()
+
+        existing = await self._get_all_memories(user_id=user_id)
         logger.debug(f"Checking against {len(existing)} existing memories")
-        
+
         unique = []
-        
+
         for new_mem in memories:
             content = new_mem.get("content", "").strip()
             if not content:
                 continue
-            
+
             new_emb = await self.embedder.get_embedding(content)
             if new_emb is None:
                 logger.warning(f"Failed to generate embedding for: {content[:50]}...")
                 continue
-            
+
             is_duplicate = False
             max_similarity = 0.0
-            
+
             for exist_mem in existing:
                 exist_emb = np.array(exist_mem["values"], dtype=np.float32)
-                
+
                 similarity = float(np.dot(new_emb, exist_emb))
                 max_similarity = max(max_similarity, similarity)
-                
+
                 if similarity >= settings.DEDUP_THRESHOLD:
                     logger.debug(
                         f"Duplicate detected (sim={similarity:.3f}): "
@@ -287,35 +299,41 @@ Return ONLY the JSON array. No other text."""
                     )
                     is_duplicate = True
                     break
-            
+
             if not is_duplicate:
                 logger.debug(f"Unique memory (max_sim={max_similarity:.3f}): {content[:50]}...")
                 new_mem["embedding"] = new_emb
                 unique.append(new_mem)
-        
+
         logger.info(f"Deduplication complete: {len(unique)}/{len(memories)} unique")
         return unique
     
-    async def _store_memory(self, memory: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def _store_memory(
+        self,
+        memory: Dict[str, Any],
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        run_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """Store memory in Pinecone"""
         content = memory.get("content", "").strip()
         embedding = memory.get("embedding")
-        
+
         if not content:
             logger.error("Cannot store memory without content")
             return None
-        
+
         if embedding is None:
             embedding = await self.embedder.get_embedding(content)
-        
+
         if embedding is None:
             logger.error(f"Failed to generate embedding for storage: {content[:50]}...")
             return None
-        
+
         timestamp = int(time.time() * 1000)
         content_hash = abs(hash(content)) % 10000
         memory_id = f"mem_{timestamp}_{content_hash}"
-        
+
         metadata = {
             "content": content,
             "tags": ",".join(memory.get("tags", [])),
@@ -323,77 +341,121 @@ Return ONLY the JSON array. No other text."""
             "timestamp": datetime.now().isoformat(),
             "created_at": datetime.now().isoformat()
         }
-        
+
+        # Add optional identifiers
+        if user_id:
+            metadata["user_id"] = user_id
+        if agent_id:
+            metadata["agent_id"] = agent_id
+        if run_id:
+            metadata["run_id"] = run_id
+
         try:
             self.index.upsert(
                 vectors=[(memory_id, embedding.tolist(), metadata)]
             )
-            
+
             logger.info(f"Stored memory [{memory_id}]: {content[:80]}...")
-            
+
             return {
                 "id": memory_id,
                 "content": content,
                 "tags": memory.get("tags", []),
                 "confidence": memory.get("confidence", 0.5),
-                "timestamp": metadata["timestamp"]
+                "timestamp": metadata["timestamp"],
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "run_id": run_id
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to store memory in Pinecone: {e}", exc_info=True)
             return None
     
-    async def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Search memories by semantic similarity"""
+    async def search(
+        self,
+        query: str,
+        limit: int = 5,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        categories: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Search memories by semantic similarity with optional filtering"""
         logger.debug(f"Searching for: {query[:100]}...")
-        
+
         query_emb = await self.embedder.get_embedding(query)
-        
+
         if query_emb is None:
             logger.error("Failed to generate query embedding")
             return []
-        
+
         try:
+            # Build filter
+            filter_dict = {}
+            if user_id:
+                filter_dict["user_id"] = {"$eq": user_id}
+            if agent_id:
+                filter_dict["agent_id"] = {"$eq": agent_id}
+
             results = self.index.query(
                 vector=query_emb.tolist(),
                 top_k=limit,
-                include_metadata=True
+                include_metadata=True,
+                filter=filter_dict if filter_dict else None
             )
-            
+
             memories = []
             for match in results.matches:
+                tags = match.metadata.get("tags", "").split(",") if match.metadata.get("tags") else []
+
+                # Filter by categories if specified
+                if categories:
+                    if not any(cat in tags for cat in categories):
+                        continue
+
                 memories.append({
                     "id": match.id,
                     "content": match.metadata.get("content", ""),
                     "relevance": float(match.score),
-                    "tags": match.metadata.get("tags", "").split(",") if match.metadata.get("tags") else [],
+                    "tags": tags,
                     "confidence": match.metadata.get("confidence", 0.5),
-                    "timestamp": match.metadata.get("timestamp", "")
+                    "timestamp": match.metadata.get("timestamp", ""),
+                    "user_id": match.metadata.get("user_id"),
+                    "agent_id": match.metadata.get("agent_id")
                 })
-            
+
             logger.info(f"Search returned {len(memories)} results")
             return memories
-            
+
         except Exception as e:
             logger.error(f"Search failed: {e}", exc_info=True)
             return []
     
-    async def get_relevant(self, current_message: str, limit: int = 5) -> List[Dict[str, Any]]:
+    async def get_relevant(
+        self,
+        current_message: str,
+        limit: int = 5,
+        user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Get memories relevant to current context with threshold filtering"""
-        results = await self.search(current_message, limit=limit * 2)
-        
+        results = await self.search(
+            current_message,
+            limit=limit * 2,
+            user_id=user_id
+        )
+
         filtered = [
-            r for r in results 
+            r for r in results
             if r["relevance"] >= settings.RELEVANCE_THRESHOLD
         ]
-        
+
         relevant = filtered[:limit]
-        
+
         logger.info(
             f"Relevant memories: {len(relevant)}/{len(results)} "
             f"(threshold: {settings.RELEVANCE_THRESHOLD})"
         )
-        
+
         return relevant
     
     async def delete(self, memory_id: str) -> bool:
@@ -405,31 +467,60 @@ Return ONLY the JSON array. No other text."""
         except Exception as e:
             logger.error(f"Delete failed for {memory_id}: {e}")
             return False
-    
+
+    async def batch_delete(self, memory_ids: List[str]) -> int:
+        """Delete multiple memories by IDs"""
+        success_count = 0
+        try:
+            self.index.delete(ids=memory_ids)
+            success_count = len(memory_ids)
+            logger.info(f"Batch deleted {success_count} memories")
+        except Exception as e:
+            logger.error(f"Batch delete failed: {e}")
+            # Fall back to individual deletes
+            for memory_id in memory_ids:
+                if await self.delete(memory_id):
+                    success_count += 1
+        return success_count
+
     async def get_stats(self) -> Dict[str, Any]:
         """Get memory statistics"""
         try:
             stats = self.index.describe_index_stats()
             return {
                 "count": stats.total_vector_count,
-                "dimension": stats.dimension
+                "dimension": stats.dimension,
+                "max_memories": settings.MAX_MEMORIES
             }
         except Exception as e:
             logger.error(f"Stats retrieval failed: {e}")
-            return {"count": 0, "dimension": 0}
-    
-    async def _get_all_memories(self) -> List[Dict[str, Any]]:
+            return {
+                "count": 0,
+                "dimension": 0,
+                "max_memories": settings.MAX_MEMORIES
+            }
+
+    async def _get_all_memories(
+        self,
+        user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Get all memories for deduplication"""
         try:
             dummy = np.zeros(self.embedding_dim, dtype=np.float32)
-            
+
+            # Build filter
+            filter_dict = {}
+            if user_id:
+                filter_dict["user_id"] = {"$eq": user_id}
+
             results = self.index.query(
                 vector=dummy.tolist(),
                 top_k=settings.MAX_MEMORIES,
                 include_values=True,
-                include_metadata=True
+                include_metadata=True,
+                filter=filter_dict if filter_dict else None
             )
-            
+
             memories = []
             for match in results.matches:
                 memories.append({
@@ -437,9 +528,9 @@ Return ONLY the JSON array. No other text."""
                     "values": match.values,
                     "metadata": match.metadata
                 })
-            
+
             return memories
-            
+
         except Exception as e:
             logger.error(f"Failed to retrieve all memories: {e}")
             return []
