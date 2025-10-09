@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o-mini"
     
     # Embedding Provider Configuration
-    EMBEDDING_PROVIDER: str = "local"  # Options: "local", "api", or "pinecone"
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_PROVIDER: str = "pinecone"  # Options: "local", "api", or "pinecone"
+    EMBEDDING_MODEL: str = "llama-text-embed-v2"
     EMBEDDING_API_URL: Optional[str] = None
     EMBEDDING_API_KEY: Optional[str] = None
     

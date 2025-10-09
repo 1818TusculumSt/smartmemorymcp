@@ -51,8 +51,6 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-This will download the local embedding model (all-MiniLM-L6-v2) during installation.
-
 ### 3. Configure Claude Desktop
 
 Edit your Claude Desktop config file:
@@ -77,8 +75,8 @@ Add the SmartMemory server:
         "LLM_API_URL": "https://api.openai.com/v1/chat/completions",
         "LLM_API_KEY": "your-openai-api-key",
         "LLM_MODEL": "gpt-4o-mini",
-        "EMBEDDING_PROVIDER": "local",
-        "EMBEDDING_MODEL": "all-MiniLM-L6-v2",
+        "EMBEDDING_PROVIDER": "pinecone",
+        "EMBEDDING_MODEL": "llama-text-embed-v2",
         "MAX_MEMORIES": "200",
         "DEDUP_THRESHOLD": "0.95",
         "MIN_CONFIDENCE": "0.5",
@@ -102,8 +100,8 @@ PINECONE_INDEX_NAME=smartmemory
 LLM_API_URL=https://api.openai.com/v1/chat/completions
 LLM_API_KEY=your-openai-api-key
 LLM_MODEL=gpt-4o-mini
-EMBEDDING_PROVIDER=local
-EMBEDDING_MODEL=all-MiniLM-L6-v2
+EMBEDDING_PROVIDER=pinecone
+EMBEDDING_MODEL=llama-text-embed-v2
 MAX_MEMORIES=200
 DEDUP_THRESHOLD=0.95
 MIN_CONFIDENCE=0.5
@@ -197,11 +195,19 @@ All settings are configured via environment variables in Claude Desktop config:
 
 ### Embedding Providers
 
-**Local (sentence-transformers) - Recommended**
+**Pinecone Inference (Recommended)**
+```json
+"EMBEDDING_PROVIDER": "pinecone",
+"EMBEDDING_MODEL": "llama-text-embed-v2"
+```
+Supported models: `llama-text-embed-v2` (1024-dim), `multilingual-e5-large` (1024-dim)
+
+**Local (sentence-transformers)**
 ```json
 "EMBEDDING_PROVIDER": "local",
 "EMBEDDING_MODEL": "all-MiniLM-L6-v2"
 ```
+Supported models: `all-MiniLM-L6-v2` (384-dim), `all-mpnet-base-v2` (768-dim)
 
 **API (OpenAI-compatible)**
 ```json
