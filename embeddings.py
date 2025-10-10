@@ -123,12 +123,12 @@ class EmbeddingProvider:
         if not self._session:
             self._session = aiohttp.ClientSession()
         
-        url = "https://api.pinecone.io/inference/embed"
-        
+        url = "https://api.pinecone.io/embed"
+
         headers = {
             "Api-Key": settings.PINECONE_API_KEY,
             "Content-Type": "application/json",
-            "X-Pinecone-API-Version": "2024-10"
+            "X-Pinecone-API-Version": "2025-04"
         }
         
         # Add dimension parameter for llama-text-embed-v2 to match index
