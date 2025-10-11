@@ -1,8 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add:*)",
-      "Bash(git rebase:*)"
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(git pull:*)",
+      "Read(//c/Obsidian/Obsidian Vault/**)"
     ],
     "deny": [],
     "ask": []

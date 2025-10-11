@@ -1,6 +1,4 @@
-<div align="center">
-  <img src="logo.png" alt="SmartMemory Logo" width="400"/>
-</div>
+<img width="1024" height="576" alt="Adobe Express - file" src="https://github.com/user-attachments/assets/0d591de8-f907-4313-8233-13c89b59a2f3" />
 
 # SmartMemory MCP Server
 
