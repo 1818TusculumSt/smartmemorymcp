@@ -202,16 +202,16 @@ DO NOT EXTRACT:
 
 EXAMPLE OUTPUT:
 [
-  {
+  {{
     "content": "User has a cat named Whiskers",
     "tags": ["relationship", "possession"],
     "confidence": 0.9
-  },
-  {
+  }},
+  {{
     "content": "User prefers working remotely",
     "tags": ["preference", "behavior"],
     "confidence": 0.75
-  }
+  }}
 ]
 
 If no user-specific memories are found, return: []"""
