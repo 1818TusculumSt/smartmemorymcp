@@ -6,10 +6,19 @@ Auto-extracting memory system for Claude Desktop with semantic search powered by
 
 ## Features
 
+### Core Capabilities
 - **Automatic Memory Extraction**: Uses LLM to identify user-specific facts, preferences, and context
+- **Proactive Memory Recall**: Automatically injects relevant memories as context (NEW!)
+- **Smart Memory Updates**: Detects and updates outdated memories instead of rejecting them (NEW!)
+- **Hybrid Search**: Combines semantic similarity with keyword matching for better results (NEW!)
+- **Memory Consolidation**: Merges fragmented memories into coherent summaries (NEW!)
+- **Temporal Awareness**: Tracks when memories were created with date context (NEW!)
+
+### Infrastructure
+- **MCP Resources**: Exposes recent memories and stats that Claude can see automatically (NEW!)
 - **Semantic Search**: Vector-based similarity search using embeddings
-- **Deduplication**: Prevents duplicate memories using embedding similarity
-- **Configurable Providers**: Switch between local and API-based embeddings
+- **Intelligent Deduplication**: Prevents duplicate memories using embedding similarity
+- **Configurable Providers**: Switch between Pinecone, local, and API-based embeddings
 - **Auto-Pruning**: Maintains memory limit by removing oldest entries
 - **Multi-User Support**: Track memories per user with user_id filtering
 - **Session Tracking**: Organize memories by conversation with agent_id and run_id
@@ -112,11 +121,53 @@ RELEVANCE_THRESHOLD=0.6
 
 Completely quit and restart Claude Desktop for the MCP server to load.
 
+## What's New in v2.0
+
+This version transforms SmartMemory from a **reactive** to a **proactive** memory system:
+
+**Before**: Claude only accessed memories when explicitly asked
+**After**: Claude automatically recalls relevant memories and sees recent context
+
+### Key Improvements:
+1. **MCP Resources** - Recent memories visible to Claude automatically
+2. **Auto-Recall Tool** - Proactive memory injection at conversation start
+3. **Smart Updates** - Memories evolve instead of being rejected as duplicates
+4. **Hybrid Search** - Better results by combining semantic + keyword matching
+5. **Consolidation** - Merge fragmented memories into coherent summaries
+6. **Temporal Context** - Track when facts were learned
+
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for detailed technical documentation.
+
 ## Usage
 
-The server provides 6 tools that Claude can use:
+The server provides **8 tools** and **3 resources** that Claude can use:
 
-### 1. Extract Memories
+### MCP Resources (Auto-Visible)
+
+Claude sees these automatically without calling tools:
+
+- **`memory://recent`** - Last 10 stored memories with tags
+- **`memory://stats`** - System statistics and capacity
+- **`memory://system-prompt`** - Usage instructions for Claude
+
+### Tools
+
+### 1. Auto-Recall Memories (NEW!)
+
+Automatically retrieves relevant memories for current conversation:
+
+```
+Claude internally calls this at response start:
+auto_recall_memories(conversation_context="user asking about pets")
+→ Returns relevant memories about user's pets
+```
+
+**Parameters:**
+- `conversation_context`: Brief topic summary
+- `limit`: Max memories to return (default: 5)
+- `user_id`: User filter (optional)
+
+### 2. Extract Memories
 
 Automatically extracts and stores memories from conversation:
 
@@ -131,35 +182,56 @@ Claude uses extract_memories tool in background
 - `agent_id`: Track which agent created the memory
 - `run_id`: Link memory to conversation session
 
-### 2. Search Memories
+### 3. Search Memories
 
-Search for specific memories with advanced filtering:
+Search for specific memories with hybrid semantic + keyword matching:
 
 ```
 User: "What do you know about my pets?"
 Claude uses search_memories with query="pets"
-→ Returns relevant memories
+→ Returns relevant memories (now with keyword boost!)
 ```
 
-**Optional Parameters:**
-- `user_id`: Filter memories by user
-- `agent_id`: Filter memories by agent
-- `categories`: Filter by memory tags (e.g., ["preference", "identity"])
+**Parameters:**
+- `query`: Search query
+- `limit`: Max results (default: 5)
+- `user_id`: Filter by user (optional)
+- `agent_id`: Filter by agent (optional)
+- `categories`: Filter by tags (optional)
 
-### 3. Get Relevant Memories
+**Improvement**: Now uses hybrid search for better precision!
+
+### 4. Get Relevant Memories
 
 Retrieves contextually relevant memories above relevance threshold:
 
 ```
 User: "Tell me about my hobbies"
 Claude uses get_relevant_memories
-→ Returns hobby-related memories above relevance threshold
+→ Returns hobby-related memories above threshold
 ```
 
-**Optional Parameters:**
-- `user_id`: Filter memories by user
+**Parameters:**
+- `current_message`: Message to find context for
+- `limit`: Max results (default: 5)
+- `user_id`: Filter by user (optional)
 
-### 4. Delete Memory
+### 5. Consolidate Memories (NEW!)
+
+Merge fragmented related memories into coherent summaries:
+
+```
+Before: ["User has a cat", "Cat is named Whiskers", "Cat is orange"]
+After: ["User has an orange cat named Whiskers"]
+```
+
+**Parameters:**
+- `user_id`: User to consolidate for (optional)
+- `tag`: Specific category to consolidate (optional)
+
+Use this periodically to improve memory quality and reduce redundancy.
+
+### 6. Delete Memory
 
 Remove a specific memory by ID:
 
@@ -169,7 +241,7 @@ Claude uses delete_memory with memory_id
 → Removes the memory
 ```
 
-### 5. Batch Delete Memories
+### 7. Batch Delete Memories
 
 Delete multiple memories at once:
 
@@ -178,7 +250,7 @@ Claude uses batch_delete_memories with memory_ids=["mem_123", "mem_456"]
 → Deletes both memories efficiently
 ```
 
-### 6. Get Stats
+### 8. Get Stats
 
 View memory system statistics:
 

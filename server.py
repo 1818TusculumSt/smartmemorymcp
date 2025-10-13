@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import asyncio
 import logging
+import json
 from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import TextContent, Tool, Resource
 
 from memory_engine import MemoryEngine
 from config import settings
@@ -20,13 +21,134 @@ logger = logging.getLogger("smartmemory-mcp")
 server = Server("smartmemory")
 memory_engine = None
 
+@server.list_resources()
+async def list_resources() -> list[Resource]:
+    """List available memory resources that Claude can see"""
+    return [
+        Resource(
+            uri="memory://recent",
+            name="Recent Memories",
+            description="Recently stored user memories and context",
+            mimeType="text/plain"
+        ),
+        Resource(
+            uri="memory://stats",
+            name="Memory Statistics",
+            description="Memory system statistics and capacity info",
+            mimeType="text/plain"
+        ),
+        Resource(
+            uri="memory://system-prompt",
+            name="Memory System Instructions",
+            description="How to effectively use the memory system",
+            mimeType="text/plain"
+        )
+    ]
+
+@server.read_resource()
+async def read_resource(uri: str) -> str:
+    """Provide memory content as resources"""
+    global memory_engine
+
+    if memory_engine is None:
+        logger.info("Initializing memory engine for resource read...")
+        memory_engine = MemoryEngine()
+
+    try:
+        if uri == "memory://recent":
+            # Get last 10 memories
+            memories = await memory_engine.get_recent(limit=10)
+            if not memories:
+                return "No memories stored yet. Start a conversation to build your memory context!"
+
+            formatted = "RECENT MEMORIES:\n"
+            formatted += "=" * 50 + "\n\n"
+            for i, m in enumerate(memories, 1):
+                formatted += f"{i}. {m['content']}\n"
+                formatted += f"   Tags: {', '.join(m.get('tags', []))}\n"
+                formatted += f"   Confidence: {m.get('confidence', 0):.2f} | "
+                formatted += f"   Stored: {m.get('timestamp', 'unknown')}\n\n"
+            return formatted
+
+        elif uri == "memory://stats":
+            stats = await memory_engine.get_stats()
+            formatted = "MEMORY SYSTEM STATUS:\n"
+            formatted += "=" * 50 + "\n\n"
+            formatted += f"Total Memories: {stats.get('count', 0)}\n"
+            formatted += f"Max Capacity: {stats.get('max_memories', 0)}\n"
+            formatted += f"Utilization: {stats.get('count', 0) / stats.get('max_memories', 1) * 100:.1f}%\n"
+            formatted += f"Embedding Dimension: {stats.get('dimension', 0)}\n"
+            return formatted
+
+        elif uri == "memory://system-prompt":
+            return """MEMORY SYSTEM INSTRUCTIONS:
+=================================
+
+You have access to a persistent memory system. Follow these guidelines:
+
+PROACTIVE MEMORY USE:
+1. At the START of each response, call auto_recall_memories with the conversation context
+2. This retrieves relevant memories to inform your responses
+3. Reference specific memories when they're relevant to the conversation
+
+AUTOMATIC MEMORY EXTRACTION:
+1. Call extract_memories after users share:
+   - Personal information (name, location, profession)
+   - Preferences (likes, dislikes, favorites)
+   - Goals and aspirations
+   - Relationships and possessions
+   - Behavioral patterns
+2. Do this AUTOMATICALLY - don't ask permission first
+3. Confirm stored memories briefly
+
+SEARCH BEFORE ASKING:
+1. Before asking about user preferences, search memories first
+2. Use search_memories for specific queries
+3. Use get_relevant_memories for broader context
+
+BEST PRACTICES:
+- Memories persist across conversations
+- Update outdated memories by storing new versions
+- Be specific and factual in memory content
+- Tag memories appropriately for better retrieval
+
+Current memory stats are available in memory://stats resource."""
+
+        return f"Unknown resource: {uri}"
+
+    except Exception as e:
+        logger.error(f"Error reading resource {uri}: {e}", exc_info=True)
+        return f"Error reading resource: {str(e)}"
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available tools"""
     return [
         Tool(
+            name="auto_recall_memories",
+            description="[CALL FIRST] Automatically retrieve memories relevant to the current conversation context. Call this at the START of your response to get contextual information about the user.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "conversation_context": {
+                        "type": "string",
+                        "description": "Brief summary of current conversation topic or user's message"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum memories to recall (default: 5)"
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier (optional)"
+                    }
+                },
+                "required": ["conversation_context"]
+            }
+        ),
+        Tool(
             name="extract_memories",
-            description="Extract and store memories from user message. Automatically identifies user-specific facts, preferences, and context.",
+            description="[CALL AUTOMATICALLY] Extract and store user-specific facts, preferences, and context from the conversation. Call this AUTOMATICALLY when user shares personal information - don't ask permission first.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -57,7 +179,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="search_memories",
-            description="Search stored memories using semantic similarity",
+            description="Search stored memories using semantic similarity. Use this for specific queries when user explicitly asks about past information.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -144,6 +266,24 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {}
             }
+        ),
+        Tool(
+            name="consolidate_memories",
+            description="Consolidate fragmented related memories into unified summaries. Use this periodically to improve memory quality and reduce redundancy.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier to consolidate memories for (optional)"
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Specific tag to consolidate memories for (optional)"
+                    }
+                },
+                "required": []
+            }
         )
     ]
 
@@ -151,14 +291,39 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """Handle tool calls"""
     global memory_engine
-    
+
     if memory_engine is None:
         logger.info("Initializing memory engine...")
         memory_engine = MemoryEngine()
         logger.info("Memory engine initialized")
-    
+
     try:
-        if name == "extract_memories":
+        if name == "auto_recall_memories":
+            conversation_context = arguments["conversation_context"]
+            limit = arguments.get("limit", 5)
+            user_id = arguments.get("user_id")
+
+            logger.info(f"Auto-recalling memories for context: {conversation_context[:100]}...")
+            results = await memory_engine.get_relevant(
+                conversation_context,
+                limit=limit,
+                user_id=user_id
+            )
+
+            if not results:
+                return [TextContent(
+                    type="text",
+                    text="No relevant memories found for this context."
+                )]
+
+            formatted = "RELEVANT MEMORIES:\n"
+            for i, m in enumerate(results, 1):
+                formatted += f"{i}. {m['content']}\n"
+                formatted += f"   (Relevance: {m['relevance']:.2f}, Tags: {', '.join(m.get('tags', []))})\n\n"
+
+            return [TextContent(type="text", text=formatted)]
+
+        elif name == "extract_memories":
             user_message = arguments["user_message"]
             recent_history = arguments.get("recent_history", [])
             user_id = arguments.get("user_id")
@@ -265,6 +430,21 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             formatted += f"- Max memories: {stats.get('max_memories', 0)}"
 
             return [TextContent(type="text", text=formatted)]
+
+        elif name == "consolidate_memories":
+            user_id = arguments.get("user_id")
+            tag = arguments.get("tag")
+
+            logger.info(f"Consolidating memories (user_id={user_id}, tag={tag})")
+            result = await memory_engine.consolidate_memories(
+                user_id=user_id,
+                tag=tag
+            )
+
+            return [TextContent(
+                type="text",
+                text=f"{result['message']}"
+            )]
 
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
