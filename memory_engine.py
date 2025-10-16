@@ -71,9 +71,30 @@ class MemoryEngine:
             }
             self.embedding_dim = pinecone_dims.get(settings.EMBEDDING_MODEL, 384)
             logger.info(f"Using Pinecone inference dimension {self.embedding_dim} for {settings.EMBEDDING_MODEL}")
+        elif settings.EMBEDDING_PROVIDER == "api":
+            # API provider dimensions for common models
+            api_dims = {
+                # Voyage AI models
+                "voyage-3": 1024,
+                "voyage-3.5": 1024,
+                "voyage-3-lite": 512,
+                "voyage-code-3": 1024,
+                "voyage-finance-2": 1024,
+                "voyage-multilingual-2": 1024,
+                "voyage-law-2": 1024,
+                # OpenAI models
+                "text-embedding-3-small": 1536,
+                "text-embedding-3-large": 3072,
+                "text-embedding-ada-002": 1536,
+                # Cohere models
+                "embed-english-v3.0": 1024,
+                "embed-multilingual-v3.0": 1024,
+            }
+            self.embedding_dim = api_dims.get(settings.EMBEDDING_MODEL, 1536)
+            logger.info(f"Using API embedding dimension {self.embedding_dim} for {settings.EMBEDDING_MODEL}")
         else:
             self.embedding_dim = 1536
-            logger.info(f"Using embedding dimension {self.embedding_dim} for API provider")
+            logger.info(f"Using default embedding dimension {self.embedding_dim}")
     
     async def extract_and_store(
         self,
