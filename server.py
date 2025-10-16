@@ -126,21 +126,40 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="auto_recall_memories",
-            description="[CALL FIRST] Automatically retrieve memories relevant to the current conversation context. Call this at the START of your response to get contextual information about the user.",
+            description="""[🔴 INVOKE AUTOMATICALLY AT START] Retrieve memories relevant to current conversation.
+
+WHEN TO CALL:
+✅ At the START of EVERY response before answering
+✅ When user asks a question (check if memories have the answer first)
+✅ When starting a new topic (get relevant background context)
+
+HOW IT WORKS:
+• Automatically finds and ranks memories by relevance to conversation
+• Returns top memories with relevance scores
+• Uses semantic similarity to match context
+
+EXAMPLE TRIGGERS:
+• User: "What should I work on today?" → Call this first to recall goals/projects
+• User: "Tell me about..." → Call this first to check existing knowledge
+• User: "I like..." → After storing, call this to confirm related memories
+
+WHY THIS MATTERS:
+This makes you remember context across conversations. Without this, you're amnesic.
+Call this PROACTIVELY - don't wait to be asked about past information.""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "conversation_context": {
                         "type": "string",
-                        "description": "Brief summary of current conversation topic or user's message"
+                        "description": "Current conversation topic or user's latest message. Be specific: 'user asking about project preferences' not just 'question'"
                     },
                     "limit": {
                         "type": "number",
-                        "description": "Maximum memories to recall (default: 5)"
+                        "description": "Maximum memories to recall (default: 5, increase for complex queries)"
                     },
                     "user_id": {
                         "type": "string",
-                        "description": "User identifier (optional)"
+                        "description": "User identifier for multi-user systems (optional, auto-detected if not provided)"
                     }
                 },
                 "required": ["conversation_context"]
@@ -148,30 +167,59 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="extract_memories",
-            description="[CALL AUTOMATICALLY] Extract and store user-specific facts, preferences, and context from the conversation. Call this AUTOMATICALLY when user shares personal information - don't ask permission first.",
+            description="""[🔴 INVOKE AUTOMATICALLY] Extract and store user facts, preferences, and context from conversation.
+
+WHEN TO CALL:
+✅ User shares personal information (name, age, location, job)
+✅ User mentions preferences (favorite X, I like/hate Y)
+✅ User states goals or aspirations ("I want to...", "My goal is...")
+✅ User describes relationships, possessions, or habits
+✅ User reveals opinions, beliefs, or patterns
+
+DO NOT ASK PERMISSION - Just store it automatically and confirm briefly.
+
+WHAT GETS EXTRACTED:
+• Personal facts: "I'm a software engineer in NYC" → stores profession and location
+• Preferences: "I love Python but hate JavaScript" → stores language preferences
+• Goals: "I'm learning machine learning" → stores learning goal
+• Context: "My cat is named Whiskers" → stores pet information
+• Patterns: "I always code in the morning" → stores behavioral pattern
+
+HOW IT WORKS:
+• Uses LLM to analyze message and extract atomic facts
+• Each fact becomes a separate memory with tags and metadata
+• Automatically categorizes memories (personal, preference, goal, etc.)
+• Deduplicates similar memories automatically
+
+EXAMPLE:
+User: "I'm John, a Python developer in Seattle. I prefer VS Code and I'm learning Rust."
+→ This MUST trigger automatic extraction (no asking!)
+→ Stores: name=John, profession=developer, language=Python, location=Seattle, tool=VS Code, learning=Rust
+
+Call this AFTER user shares info, BEFORE responding about something else.""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "user_message": {
                         "type": "string",
-                        "description": "User message to extract memories from"
+                        "description": "The exact user message containing information to extract. Include the full message for better context."
                     },
                     "recent_history": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Recent conversation history for context (optional)"
+                        "description": "Previous 2-3 messages for context (e.g., ['What's your name?', 'I'm John', 'Where do you live?']). Helps with pronoun resolution."
                     },
                     "user_id": {
                         "type": "string",
-                        "description": "User identifier for memory organization (optional)"
+                        "description": "User identifier for multi-user systems (optional, auto-detected if not provided)"
                     },
                     "agent_id": {
                         "type": "string",
-                        "description": "Agent identifier for memory organization (optional)"
+                        "description": "Your agent identifier if in multi-agent system (optional)"
                     },
                     "run_id": {
                         "type": "string",
-                        "description": "Conversation run identifier (optional)"
+                        "description": "Conversation session identifier for grouping related memories (optional)"
                     }
                 },
                 "required": ["user_message"]
@@ -179,30 +227,56 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="search_memories",
-            description="Search stored memories using semantic similarity. Use this for specific queries when user explicitly asks about past information.",
+            description="""Search stored memories using semantic similarity for specific queries.
+
+WHEN TO CALL:
+✅ User explicitly asks "What did I say about...?"
+✅ User asks "Do you remember when I...?"
+✅ Looking for specific fact across all memories
+✅ Need to find memories by category or topic
+
+WHEN NOT TO CALL:
+❌ At conversation start (use auto_recall_memories instead)
+❌ For general context (use get_relevant_memories instead)
+❌ User just shared info (use extract_memories instead)
+
+HOW IT WORKS:
+• Searches all stored memories using semantic similarity
+• Returns ranked results with relevance scores
+• Can filter by user, agent, or categories
+• More targeted than auto_recall (you control the query)
+
+EXAMPLE USES:
+• User: "What programming languages do I like?" → query="programming language preferences"
+• User: "Where did I say I live?" → query="user location residence"
+• User: "What are my goals?" → query="user goals aspirations", categories=["goal"]
+
+DIFFERENCE FROM auto_recall_memories:
+• search_memories: You write explicit query → targeted search
+• auto_recall_memories: System auto-generates query from context → broader recall""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query"
+                        "description": "Specific search query. Be precise: 'user Python programming preference' beats 'programming'. Use keywords from expected memories."
                     },
                     "limit": {
                         "type": "number",
-                        "description": "Maximum results to return (default: 5)"
+                        "description": "Maximum results to return (default: 5, increase if searching broadly)"
                     },
                     "user_id": {
                         "type": "string",
-                        "description": "Filter by user ID (optional)"
+                        "description": "Filter to specific user in multi-user system (optional)"
                     },
                     "agent_id": {
                         "type": "string",
-                        "description": "Filter by agent ID (optional)"
+                        "description": "Filter to memories stored by specific agent (optional)"
                     },
                     "categories": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Filter by memory categories (optional)"
+                        "description": "Filter by memory categories like 'preference', 'goal', 'personal', 'technical' (optional)"
                     }
                 },
                 "required": ["query"]
@@ -210,21 +284,43 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_relevant_memories",
-            description="Get memories relevant to current conversation context",
+            description="""Get memories contextually relevant to current conversation (alternative to auto_recall).
+
+WHEN TO CALL:
+✅ Need context for current topic being discussed
+✅ User switches topics mid-conversation
+✅ Want to find related background information
+✅ Alternative to auto_recall_memories (similar functionality)
+
+NOTE: This is very similar to auto_recall_memories. Main difference:
+• auto_recall: You pass conversation context (broader)
+• get_relevant: You pass current message (more specific)
+
+RECOMMENDATION: Prefer auto_recall_memories for consistency.
+
+HOW IT WORKS:
+• Takes user's current message as input
+• Finds semantically similar memories
+• Returns ranked by relevance with scores
+
+EXAMPLE:
+• User: "What should I build next?"
+• current_message: "What should I build next?"
+• Returns memories about: user's projects, goals, preferences, skills""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "current_message": {
                         "type": "string",
-                        "description": "Current message to find relevant memories for"
+                        "description": "The current user message or topic to find relevant memories for. Pass the actual message text."
                     },
                     "limit": {
                         "type": "number",
-                        "description": "Maximum memories to return (default: 5)"
+                        "description": "Maximum memories to return (default: 5, increase for more context)"
                     },
                     "user_id": {
                         "type": "string",
-                        "description": "Filter by user ID (optional)"
+                        "description": "Filter to specific user in multi-user system (optional)"
                     }
                 },
                 "required": ["current_message"]
@@ -232,13 +328,22 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="delete_memory",
-            description="Delete a specific memory by ID",
+            description="""Delete a specific memory by its unique ID.
+
+WHEN TO CALL:
+✅ User explicitly asks to forget/delete specific information
+✅ Memory is outdated or incorrect
+✅ User wants to remove sensitive information
+
+CAUTION: This is permanent. Confirm with user if unsure.
+
+Get memory IDs from search_memories or auto_recall_memories results.""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "memory_id": {
                         "type": "string",
-                        "description": "ID of memory to delete"
+                        "description": "Unique identifier of the memory to delete (from memory search results)"
                     }
                 },
                 "required": ["memory_id"]
@@ -246,14 +351,23 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="batch_delete_memories",
-            description="Delete multiple memories by IDs",
+            description="""Delete multiple memories at once by their IDs.
+
+WHEN TO CALL:
+✅ User wants to clear memories about a specific topic
+✅ Removing multiple related outdated memories
+✅ Bulk cleanup of incorrect information
+
+CAUTION: This is permanent. Confirm with user before bulk deletion.
+
+More efficient than calling delete_memory multiple times.""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "memory_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of memory IDs to delete"
+                        "description": "Array of memory IDs to delete (get from search results)"
                     }
                 },
                 "required": ["memory_ids"]
@@ -261,7 +375,19 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_stats",
-            description="Get memory system statistics and status",
+            description="""Get memory system statistics and current status.
+
+WHEN TO CALL:
+✅ User asks "How many memories do you have?"
+✅ User asks about memory capacity or usage
+✅ Debugging memory system issues
+✅ Checking system health
+
+RETURNS:
+• Total number of memories stored
+• Maximum capacity
+• Embedding dimensions
+• Utilization percentage""",
             inputSchema={
                 "type": "object",
                 "properties": {}
@@ -269,17 +395,35 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="consolidate_memories",
-            description="Consolidate fragmented related memories into unified summaries. Use this periodically to improve memory quality and reduce redundancy.",
+            description="""Consolidate fragmented, related memories into unified summaries.
+
+WHEN TO CALL:
+✅ Many similar memories about same topic (reduces redundancy)
+✅ User asks to "organize" or "clean up" memories
+✅ Approaching memory capacity limit
+✅ Periodically for maintenance (weekly/monthly)
+
+WHAT IT DOES:
+• Finds clusters of related memories
+• Uses LLM to merge them into comprehensive summaries
+• Deletes individual fragments, keeps consolidated version
+• Preserves all information while reducing memory count
+
+EXAMPLE:
+Before: "User likes Python", "User codes in Python", "User prefers Python to Java"
+After: "User is a Python developer who prefers Python over Java for coding"
+
+Can filter by user_id or specific tag for targeted consolidation.""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "User identifier to consolidate memories for (optional)"
+                        "description": "Only consolidate memories for this user (optional, consolidates all if not provided)"
                     },
                     "tag": {
                         "type": "string",
-                        "description": "Specific tag to consolidate memories for (optional)"
+                        "description": "Only consolidate memories with this tag like 'preference' or 'goal' (optional)"
                     }
                 },
                 "required": []
