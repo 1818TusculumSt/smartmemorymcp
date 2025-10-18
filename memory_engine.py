@@ -164,7 +164,8 @@ class MemoryEngine:
 
             recent = []
             for mem in all_mems[:limit]:
-                tags = mem["metadata"].get("tags", "").split(",") if mem["metadata"].get("tags") else []
+                tags_raw = mem["metadata"].get("tags", "")
+                tags = tags_raw if isinstance(tags_raw, list) else (tags_raw.split(",") if tags_raw else [])
                 recent.append({
                     "id": mem["id"],
                     "content": mem["metadata"].get("content", ""),
@@ -490,7 +491,8 @@ Return ONLY the JSON array. No other text."""
             query_terms = query.lower().split()
 
             for match in results.matches:
-                tags = match.metadata.get("tags", "").split(",") if match.metadata.get("tags") else []
+                tags_raw = match.metadata.get("tags", "")
+                tags = tags_raw if isinstance(tags_raw, list) else (tags_raw.split(",") if tags_raw else [])
 
                 # Filter by categories if specified
                 if categories:
@@ -674,7 +676,7 @@ Return ONLY the JSON array. No other text."""
         if tag:
             all_mems = [
                 m for m in all_mems
-                if tag in m["metadata"].get("tags", "").split(",")
+                if tag in (m["metadata"].get("tags", []) if isinstance(m["metadata"].get("tags"), list) else m["metadata"].get("tags", "").split(","))
             ]
 
         if len(all_mems) < 3:
@@ -777,7 +779,7 @@ Return only the consolidated memory:"""
                 "content": consolidated_text.strip(),
                 "tags": list(set(
                     tag for mem in group
-                    for tag in mem["metadata"].get("tags", "").split(",")
+                    for tag in (mem["metadata"].get("tags", []) if isinstance(mem["metadata"].get("tags"), list) else mem["metadata"].get("tags", "").split(","))
                     if tag
                 )),
                 "confidence": max(

@@ -483,15 +483,11 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 run_id=run_id
             )
 
-            if not result:
-                return [TextContent(
-                    type="text",
-                    text="No new memories extracted"
-                )]
-
+            # Return minimal response - LLMs typically ignore metadata-like fields
+            stored_count = len(result) if result else 0
             return [TextContent(
                 type="text",
-                text=f"Stored {len(result)} new memories"
+                text=f'{{"ok": true, "stored": {stored_count}}}'
             )]
 
         elif name == "search_memories":
