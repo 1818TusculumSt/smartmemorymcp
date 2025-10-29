@@ -10,6 +10,261 @@ This document outlines all the improvements made to transform SmartMemory from a
 
 ---
 
+## v2.0 Phase 1: Enhanced Metadata & Organization 🎯 NEW (2025)
+
+### Overview
+Phase 1 of v2.0 enhances the memory system with rich metadata, intelligent categorization, and powerful organization tools—all while maintaining full backward compatibility with existing Pinecone data.
+
+### Enhanced Metadata Schema
+
+**Previous (v1.x):**
+```python
+{
+    "content": str,
+    "tags": "comma,separated,string",  # String format
+    "confidence": float,
+    "timestamp": str,
+    "user_id": str
+}
+```
+
+**New (v2.0):**
+```python
+{
+    # Core fields (existing)
+    "content": str,
+    "confidence": float,
+    "timestamp": str,
+    "created_at": str,
+    "user_id": str,
+    "agent_id": str,
+    "run_id": str,
+
+    # V2.0 additions - Categorization
+    "tags": ["tag1", "tag2"],           # Now an array
+    "category": str,                     # achievement, frustration, idea, fact, etc.
+
+    # V2.0 additions - Quality/Importance
+    "importance": int,                   # 1-10 scale
+    "pinned": bool,                      # Always include in context
+    "archived": bool,                    # Soft delete, hide from searches
+
+    # V2.0 additions - Content analysis
+    "word_count": int,
+    "sentiment": str,                    # positive, negative, neutral, mixed
+
+    # V2.0 additions - Temporal
+    "updated_at": str,
+    "event_date": str                    # Optional: when event occurred
+}
+```
+
+### New Categories (Auto-Assigned)
+LLM automatically classifies memories into one of 10 categories:
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| `achievement` | Completed tasks, successes, victories | "Fixed BADBUNNY PSU issue", "Deployed new feature" |
+| `frustration` | Problems, failures, roadblocks | "Network connectivity issues", "Failed migration" |
+| `idea` | Thoughts, plans, future considerations | "Should implement caching", "Consider using Redis" |
+| `fact` | Factual information about user | "Lives in Seattle", "Uses Python", "Has 4 kids" |
+| `event` | Things that happened | "Team meeting today", "Conference next week" |
+| `conversation` | Discussion topics | "Talked about AI ethics", "Discussed homelab setup" |
+| `relationship` | Information about people | "Works with Jane", "Friend named Mike" |
+| `technical` | Code, systems, infrastructure | "Using Docker", "Postgres on port 5432" |
+| `personal` | Family, hobbies, interests | "Enjoys hiking", "Plays guitar" |
+| `misc` | Everything else | - |
+
+### Importance Scoring (1-10)
+LLM assigns importance during extraction:
+
+- **1-3 (Low)**: Minor details, trivial facts, passing mentions
+- **4-6 (Medium)**: Useful information, regular preferences, typical activities
+- **7-8 (High)**: Important facts, strong preferences, key relationships, significant events
+- **9-10 (Critical)**: Core identity, mission-critical information, deeply held values
+
+### Sentiment Analysis
+Tracks emotional tone:
+- **positive**: Achievements, good news, preferences, successes
+- **negative**: Frustrations, problems, dislikes, failures
+- **neutral**: Facts, observations, routine information
+- **mixed**: Complex feelings, both good and bad aspects
+
+### New MCP Tools (7 Added)
+
+#### Time-Based Retrieval
+**`get_recent_memories`** - Chronological view of memories
+```python
+get_recent_memories(
+    user_id: Optional[str],
+    limit: int = 20,
+    since: Optional[str],        # ISO timestamp
+    before: Optional[str],       # ISO timestamp
+    include_archived: bool = False
+) -> List[Memory]
+```
+
+#### Tag Management
+**`get_all_tags`** - List all tags with usage counts
+```python
+get_all_tags(
+    user_id: Optional[str],
+    min_count: int = 1,
+    sort_by: str = "count"  # "count" or "name"
+) -> List[Dict[str, Any]]
+```
+
+**`add_memory_tags`** - Add/replace tags on memory
+```python
+add_memory_tags(
+    memory_id: str,
+    tags: List[str],
+    replace: bool = False
+) -> Dict[str, Any]
+```
+
+**`search_by_tag`** - Find memories with specific tag
+```python
+search_by_tag(
+    tag: str,
+    user_id: Optional[str],
+    limit: int = 20,
+    sort_by: str = "created_at"  # or "importance"
+) -> List[Memory]
+```
+
+#### Quality Curation
+**`set_memory_importance`** - Set 1-10 importance score
+```python
+set_memory_importance(
+    memory_id: str,
+    importance: int  # 1-10
+) -> Dict[str, Any]
+```
+
+**`pin_memory`** - Pin memory for always-include
+```python
+pin_memory(
+    memory_id: str
+) -> Dict[str, Any]
+```
+
+**`archive_memory`** - Soft delete (reversible)
+```python
+archive_memory(
+    memory_id: str
+) -> Dict[str, Any]
+```
+
+### Enhanced Extraction Prompt
+
+The LLM extraction prompt now includes:
+
+1. **Category classification** with descriptions and examples
+2. **Importance scoring** with clear 1-10 guidelines
+3. **Sentiment analysis** instructions
+4. **Word count** automatic calculation
+5. **Comprehensive vs atomic** extraction guidance
+
+Example output:
+```json
+{
+  "content": "User completed BADBUNNY PSU migration after 3 hours",
+  "tags": ["homelab", "hardware", "BADBUNNY", "victory"],
+  "category": "achievement",
+  "importance": 8,
+  "sentiment": "positive",
+  "confidence": 0.95,
+  "word_count": 7
+}
+```
+
+### Enhanced Statistics (`get_stats`)
+
+Now returns rich metadata breakdown:
+
+```python
+{
+    "count": 150,
+    "active_count": 140,
+    "archived_count": 10,
+    "pinned_count": 5,
+    "utilization_pct": 75.0,
+
+    "categories": {
+        "technical": 45,
+        "achievement": 32,
+        "fact": 28,
+        ...
+    },
+
+    "sentiment_distribution": {
+        "positive": 85,
+        "neutral": 50,
+        "negative": 15
+    },
+
+    "importance_distribution": {
+        10: 3,
+        9: 8,
+        8: 15,
+        ...
+    },
+
+    "top_tags": [
+        {"name": "homelab", "count": 42},
+        {"name": "technical", "count": 38},
+        ...
+    ],
+
+    "unique_tag_count": 67
+}
+```
+
+### Implementation Details
+
+**Files Modified:**
+- `memory_engine.py` (~500 lines added)
+  - Enhanced metadata schema in `_store_memory()`
+  - Updated extraction prompt in `_extract_memories()`
+  - Added 6 new methods for v2.0 tools
+  - Enhanced `get_stats()` with metadata aggregation
+  - Updated `get_recent()` with date filtering and archived flag
+
+- `server.py` (~480 lines added)
+  - Added 7 new MCP tool definitions
+  - Added 7 new tool handlers
+  - Enhanced `get_stats` response formatting
+
+**Backward Compatibility:**
+- All new metadata fields are optional
+- Tags support both string (old) and array (new) formats
+- Existing memories work without modification
+- No breaking changes to existing tools
+- Pinecone metadata is flexible (supports nested JSON)
+
+### Why It Matters
+
+1. **Better Organization**: Tag-based filtering and categorization
+2. **Quality Curation**: Pin important, archive outdated
+3. **Temporal Queries**: Find memories by date ranges
+4. **Rich Analytics**: Understand memory patterns and distribution
+5. **Importance Prioritization**: Focus on what matters most
+6. **Sentiment Tracking**: Understand emotional context
+7. **No Migration Required**: Works with existing Pinecone data
+
+### What's Next (Phase 2+)
+
+Future phases will add:
+- Advanced multi-filter search (category + importance + tags + dates)
+- Pinned memory priority in auto_recall
+- Archived memory exclusion from searches
+- Migration script for backfilling v2.0 metadata on old memories
+- Relationship detection and entity recognition
+- Duplicate detection improvements
+
+---
+
 ## 1. MCP Resources for Proactive Visibility ✨ MAJOR
 
 ### What Changed

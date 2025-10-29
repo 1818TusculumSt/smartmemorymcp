@@ -14,13 +14,25 @@ SmartMemory solves Claude's amnesia problem. Instead of starting from scratch ev
 
 ## Key Features
 
-### Memory Management
+### Memory Management (v2.0)
 - **Automatic Extraction** - LLM analyzes conversations to identify and store user facts, preferences, goals, and context
+- **Smart Categorization** - Automatically classifies memories into 10 categories (achievement, frustration, idea, fact, event, conversation, relationship, technical, personal, misc)
+- **Importance Scoring** - Assigns 1-10 importance scores to prioritize critical information
+- **Sentiment Analysis** - Tracks emotional tone (positive, negative, neutral, mixed) of memories
 - **Proactive Recall** - Automatically retrieves relevant memories at conversation start without being asked
 - **Smart Updates** - Detects and updates outdated memories instead of rejecting them as duplicates
 - **Hybrid Search** - Combines semantic similarity (embeddings) with keyword matching for 3x better precision
 - **Memory Consolidation** - Merges fragmented memories into coherent summaries
-- **Temporal Awareness** - Tracks when memories were created for better context
+- **Temporal Awareness** - Tracks creation, update times, and optional event dates
+- **Quality Curation** - Pin important memories, archive outdated ones
+
+### Organization & Filtering
+- **Tag-Based Organization** - Tag memories with custom labels for easy categorization
+- **Search by Tag** - Find all memories with a specific tag
+- **Time-Based Retrieval** - Get memories from specific date ranges
+- **Importance Filtering** - Focus on high-priority information
+- **Archive System** - Soft-delete outdated memories (reversible)
+- **Pinned Memories** - Mark critical information to always include in context
 
 ### Infrastructure
 - **MCP Resources** - Exposes recent memories and stats that Claude can see automatically
@@ -31,8 +43,7 @@ SmartMemory solves Claude's amnesia problem. Instead of starting from scratch ev
 - **Multi-User Support** - Track memories per user with user_id filtering
 - **Session Tracking** - Organize memories by conversation using agent_id and run_id
 - **Batch Operations** - Delete multiple memories efficiently
-- **Category Filtering** - Search memories by tags (preference, goal, identity, etc.)
-- **Statistics & Monitoring** - Real-time stats on memory count, capacity, and utilization
+- **Rich Statistics** - Category breakdown, sentiment analysis, tag distribution, importance metrics
 
 ### Data Portability & Privacy
 - **Your Data, Your Control** - All memories stored in your own Pinecone account, not ours
@@ -44,6 +55,83 @@ SmartMemory solves Claude's amnesia problem. Instead of starting from scratch ev
 ## Attribution
 
 The memory extraction and deduplication system in this project is derived from [gramanoid'''s Adaptive Memory filter for Open WebUI](https://github.com/gramanoid/owui-adaptive-memory). The original filter provided the foundation for LLM-based memory extraction, embedding similarity comparison, and semantic deduplication. This implementation adapts those concepts into a standalone MCP server with additional features like proactive recall, hybrid search, memory consolidation, and temporal awareness.
+
+## Available MCP Tools
+
+SmartMemory provides 15 MCP tools that Claude can use automatically:
+
+### Core Memory Operations
+| Tool | Description | When Claude Uses It |
+|------|-------------|-------------------|
+| `auto_recall_memories` | Retrieve memories relevant to conversation | 🔴 Automatically at start of every response |
+| `extract_memories` | Extract and store facts from conversation | 🔴 Automatically when user shares information |
+| `search_memories` | Search memories by semantic similarity | When user asks "What did I say about..." |
+| `get_relevant_memories` | Get contextual memories for current topic | Alternative to auto_recall |
+
+### Time-Based Retrieval (v2.0)
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `get_recent_memories` | Get memories sorted by time (newest first) | "Show me recent memories", "What happened this week?" |
+
+### Tag Management (v2.0)
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `get_all_tags` | List all tags with usage counts | "What tags do I have?", "How are my memories organized?" |
+| `add_memory_tags` | Add or replace tags on a memory | "Tag that memory as homelab", "Categorize that as technical" |
+| `search_by_tag` | Find memories with a specific tag | "Show me all homelab memories", "My technical notes" |
+
+### Quality Curation (v2.0)
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `set_memory_importance` | Set importance score 1-10 | "Mark that as important", "This is critical" |
+| `pin_memory` | Pin memory to always include | "Always remember this", "Never forget this" |
+| `archive_memory` | Archive memory (soft delete) | "Forget that for now", "Archive old project notes" |
+
+### Bulk Operations
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `delete_memory` | Delete a specific memory | "Delete that memory", "Forget that" |
+| `batch_delete_memories` | Delete multiple memories | "Clear all memories about X" |
+| `consolidate_memories` | Merge similar memories | "Organize my memories", "Clean up duplicates" |
+
+### System Information
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `get_stats` | Get memory statistics (v2.0 enhanced) | "How many memories?", "Show memory stats" |
+
+### What's New in v2.0
+
+**Enhanced Memory Metadata:**
+- **Categories**: achievement, frustration, idea, fact, event, conversation, relationship, technical, personal, misc
+- **Importance**: 1-10 scoring (auto-assigned during extraction)
+- **Sentiment**: positive, negative, neutral, mixed
+- **Tags**: Array-based tagging for better organization
+- **Flags**: pinned (always include), archived (hide from searches)
+- **Timestamps**: created_at, updated_at, optional event_date
+
+**Example Memory Structure:**
+```json
+{
+  "content": "User completed BADBUNNY PSU migration after 3 hours",
+  "tags": ["homelab", "hardware", "BADBUNNY", "victory"],
+  "category": "achievement",
+  "importance": 8,
+  "sentiment": "positive",
+  "confidence": 0.95,
+  "word_count": 7,
+  "pinned": false,
+  "archived": false
+}
+```
+
+**Enhanced Statistics:**
+```
+📊 Overview: Total, active, archived, pinned counts
+📁 Categories: Breakdown by category
+😊 Sentiment: Distribution of positive/negative/neutral
+🏷️  Top Tags: Most-used tags
+⭐ Importance: Distribution by score
+```
 
 ## Prerequisites
 
