@@ -428,6 +428,282 @@ Can filter by user_id or specific tag for targeted consolidation.""",
                 },
                 "required": []
             }
+        ),
+        Tool(
+            name="get_recent_memories",
+            description="""Get memories sorted by creation time (newest first).
+
+WHEN TO CALL:
+✅ User asks "what happened recently?"
+✅ User asks "what did I do today/this week?"
+✅ Need chronological view of recent activity
+✅ User wants to see latest memories
+
+HOW IT WORKS:
+• Returns memories ordered by creation timestamp
+• Can filter by date range (since/before)
+• Supports pagination with limit
+• Excludes archived memories by default
+
+EXAMPLE USES:
+• "Show me my recent memories" → get recent without filters
+• "What did I tell you today?" → since=today's date
+• "What happened last week?" → since=7 days ago, before=today
+
+This gives a time-ordered view, unlike search which ranks by relevance.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier (optional, filters to specific user)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Number of memories to return (default: 20, max: 100)"
+                    },
+                    "since": {
+                        "type": "string",
+                        "description": "ISO timestamp - only return memories after this time (optional)"
+                    },
+                    "before": {
+                        "type": "string",
+                        "description": "ISO timestamp - only return memories before this time (optional)"
+                    },
+                    "include_archived": {
+                        "type": "boolean",
+                        "description": "Include archived memories (default: false)"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_all_tags",
+            description="""List all unique tags with usage counts.
+
+WHEN TO CALL:
+✅ User asks "what tags do I have?"
+✅ User wants to see memory organization
+✅ Need to suggest tags for categorization
+✅ Exploring memory topics
+
+RETURNS:
+• Tag names with usage counts
+• Sorted by frequency or alphabetically
+• Useful for understanding memory organization
+
+EXAMPLE USES:
+• "What tags do I use?" → returns all tags with counts
+• "How are my memories organized?" → shows tag distribution
+• Need to suggest relevant tags → get existing tags first""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "Filter to specific user (optional)"
+                    },
+                    "min_count": {
+                        "type": "number",
+                        "description": "Only return tags used at least N times (default: 1)"
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "description": "Sort by 'count' (most used first) or 'name' (alphabetical). Default: count"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="add_memory_tags",
+            description="""Add tags to an existing memory for better organization.
+
+WHEN TO CALL:
+✅ User wants to categorize/tag an existing memory
+✅ Need to organize memories by topic
+✅ Adding context to previously stored memory
+✅ User says "tag that memory with..."
+
+HOW IT WORKS:
+• Adds tags to memory metadata
+• Can append to existing tags or replace them
+• Tags help with filtering and organization
+
+EXAMPLE USES:
+• "Tag that memory as important" → memory_id + tags=["important"]
+• "Add 'homelab' tag to memory X" → memory_id + tags=["homelab"]
+• "Categorize that as technical" → memory_id + tags=["technical"]
+
+Get memory_id from search or recent memories results.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "Unique identifier of the memory to tag (from search/recent results)"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tags to add (e.g., ['homelab', 'technical', 'victory'])"
+                    },
+                    "replace": {
+                        "type": "boolean",
+                        "description": "Replace existing tags instead of appending (default: false)"
+                    }
+                },
+                "required": ["memory_id", "tags"]
+            }
+        ),
+        Tool(
+            name="search_by_tag",
+            description="""Get all memories with a specific tag.
+
+WHEN TO CALL:
+✅ User asks "show me all homelab memories"
+✅ User wants to see memories by category
+✅ Need to find all memories about a topic
+✅ Filtering by tag rather than semantic search
+
+HOW IT WORKS:
+• Returns all memories that have the specified tag
+• Can sort by time, importance, or relevance
+• More precise than semantic search when tag exists
+
+EXAMPLE USES:
+• "Show my technical memories" → tag="technical"
+• "What homelab stuff have I done?" → tag="homelab"
+• "My goals?" → tag="goal"
+
+DIFFERENCE FROM search_memories:
+• search_by_tag: Exact tag match → precise filtering
+• search_memories: Semantic similarity → finds related content""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "Filter to specific user (optional)"
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Tag to filter by (e.g., 'homelab', 'technical', 'goal')"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum memories to return (default: 20)"
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "description": "Sort by 'created_at' (newest first), 'importance' (most important first), or 'relevance'"
+                    }
+                },
+                "required": ["tag"]
+            }
+        ),
+        Tool(
+            name="set_memory_importance",
+            description="""Set importance score (1-10) for a memory.
+
+WHEN TO CALL:
+✅ User indicates something is important/critical
+✅ User says "remember this" or "this is important"
+✅ Prioritizing certain memories
+✅ Curating memory quality
+
+IMPORTANCE SCALE:
+• 1-3: Low - Minor details, trivial facts
+• 4-6: Medium - Useful information, regular preferences
+• 7-8: High - Important facts, key relationships
+• 9-10: Critical - Core identity, mission-critical info
+
+EXAMPLE USES:
+• "This is really important" → set importance=9 or 10
+• "Remember this for later" → set importance=7 or 8
+• "Just a note" → set importance=3 or 4""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "Unique identifier of the memory"
+                    },
+                    "importance": {
+                        "type": "number",
+                        "description": "Importance score from 1 (low) to 10 (critical)"
+                    }
+                },
+                "required": ["memory_id", "importance"]
+            }
+        ),
+        Tool(
+            name="pin_memory",
+            description="""Pin a memory to always include it in context.
+
+WHEN TO CALL:
+✅ User says "always remember this"
+✅ Core facts that should never be forgotten
+✅ Mission-critical information
+✅ User's core identity or values
+
+HOW IT WORKS:
+• Pinned memories are always included in searches
+• Higher priority in auto_recall results
+• Won't be archived or pruned
+• Use sparingly for truly important information
+
+EXAMPLE USES:
+• User shares core values → pin it
+• Critical preferences → pin it
+• "Never forget this" → pin it
+• Core identity facts → pin it""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "Unique identifier of the memory to pin"
+                    }
+                },
+                "required": ["memory_id"]
+            }
+        ),
+        Tool(
+            name="archive_memory",
+            description="""Archive a memory (soft delete - keeps it but hides from searches).
+
+WHEN TO CALL:
+✅ Information is outdated but worth keeping
+✅ User says "forget this for now" (not permanent delete)
+✅ Seasonal/temporary information no longer relevant
+✅ Cleaning up without losing history
+
+HOW IT WORKS:
+• Memory stays in database but excluded from searches
+• Can be restored by including archived in searches
+• Better than delete when info might be useful later
+• Reduces clutter without data loss
+
+EXAMPLE USES:
+• Old project goals that are complete → archive
+• Outdated preferences that changed → archive
+• Temporary goals that are done → archive
+
+DIFFERENCE FROM delete:
+• archive: Keeps memory, just hides it (reversible)
+• delete: Permanently removes memory (irreversible)""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "Unique identifier of the memory to archive"
+                    }
+                },
+                "required": ["memory_id"]
+            }
         )
     ]
 
@@ -561,13 +837,53 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             )]
 
         elif name == "get_stats":
-            logger.info("Getting memory stats")
-            stats = await memory_engine.get_stats()
+            user_id = arguments.get("user_id")
+            logger.info(f"Getting memory stats (user_id={user_id})")
+            stats = await memory_engine.get_stats(user_id=user_id)
 
-            formatted = f"Memory Statistics:\n"
-            formatted += f"- Total memories: {stats.get('count', 0)}\n"
-            formatted += f"- Embedding dimension: {stats.get('dimension', 0)}\n"
-            formatted += f"- Max memories: {stats.get('max_memories', 0)}"
+            formatted = "MEMORY STATISTICS:\n\n"
+
+            # Basic stats
+            formatted += f"📊 Overview:\n"
+            formatted += f"  • Total memories: {stats.get('count', 0)}\n"
+            formatted += f"  • Active memories: {stats.get('active_count', 0)}\n"
+            formatted += f"  • Archived: {stats.get('archived_count', 0)}\n"
+            formatted += f"  • Pinned: {stats.get('pinned_count', 0)}\n"
+            formatted += f"  • Capacity: {stats.get('utilization_pct', 0)}% ({stats.get('count', 0)}/{stats.get('max_memories', 0)})\n"
+            formatted += f"  • Embedding dimension: {stats.get('dimension', 0)}\n\n"
+
+            # Categories
+            categories = stats.get('categories', {})
+            if categories:
+                formatted += "📁 Categories:\n"
+                for cat, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+                    formatted += f"  • {cat}: {count}\n"
+                formatted += "\n"
+
+            # Sentiment
+            sentiment = stats.get('sentiment_distribution', {})
+            if sentiment:
+                formatted += "😊 Sentiment:\n"
+                for sent, count in sorted(sentiment.items(), key=lambda x: x[1], reverse=True):
+                    formatted += f"  • {sent}: {count}\n"
+                formatted += "\n"
+
+            # Top tags
+            top_tags = stats.get('top_tags', [])
+            if top_tags:
+                formatted += f"🏷️  Top {len(top_tags)} Tags (out of {stats.get('unique_tag_count', 0)} unique):\n"
+                for tag_info in top_tags:
+                    formatted += f"  • {tag_info['name']}: {tag_info['count']}\n"
+                formatted += "\n"
+
+            # Importance distribution
+            importance_dist = stats.get('importance_distribution', {})
+            if importance_dist:
+                formatted += "⭐ Importance Distribution:\n"
+                for score in range(10, 0, -1):
+                    count = importance_dist.get(score, 0)
+                    if count > 0:
+                        formatted += f"  • {score}/10: {count}\n"
 
             return [TextContent(type="text", text=formatted)]
 
@@ -585,6 +901,157 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 type="text",
                 text=f"{result['message']}"
             )]
+
+        elif name == "get_recent_memories":
+            user_id = arguments.get("user_id")
+            limit = arguments.get("limit", 20)
+            since = arguments.get("since")
+            before = arguments.get("before")
+            include_archived = arguments.get("include_archived", False)
+
+            logger.info(f"Getting recent memories (limit={limit}, since={since}, before={before})")
+            results = await memory_engine.get_recent(
+                limit=limit,
+                user_id=user_id,
+                since=since,
+                before=before,
+                include_archived=include_archived
+            )
+
+            if not results:
+                return [TextContent(type="text", text="No recent memories found")]
+
+            formatted = "RECENT MEMORIES:\n"
+            for i, m in enumerate(results, 1):
+                formatted += f"\n{i}. {m['content']}\n"
+                if m.get('category'):
+                    formatted += f"   Category: {m['category']}"
+                if m.get('importance'):
+                    formatted += f" | Importance: {m['importance']}/10"
+                if m.get('sentiment'):
+                    formatted += f" | Sentiment: {m['sentiment']}"
+                formatted += f"\n   Tags: {', '.join(m.get('tags', []))}\n"
+                formatted += f"   Created: {m.get('created_at', m.get('timestamp', ''))}\n"
+
+            return [TextContent(type="text", text=formatted)]
+
+        elif name == "get_all_tags":
+            user_id = arguments.get("user_id")
+            min_count = arguments.get("min_count", 1)
+            sort_by = arguments.get("sort_by", "count")
+
+            logger.info(f"Getting all tags (min_count={min_count}, sort_by={sort_by})")
+            results = await memory_engine.get_all_tags(
+                user_id=user_id,
+                min_count=min_count,
+                sort_by=sort_by
+            )
+
+            if not results:
+                return [TextContent(type="text", text="No tags found")]
+
+            formatted = "TAGS:\n"
+            for tag_info in results:
+                formatted += f"- {tag_info['name']}: {tag_info['count']} memories\n"
+
+            return [TextContent(type="text", text=formatted)]
+
+        elif name == "add_memory_tags":
+            memory_id = arguments["memory_id"]
+            tags = arguments["tags"]
+            replace = arguments.get("replace", False)
+
+            logger.info(f"Adding tags to memory {memory_id}: {tags}")
+            result = await memory_engine.add_tags_to_memory(
+                memory_id=memory_id,
+                tags=tags,
+                replace=replace
+            )
+
+            if result.get("success"):
+                formatted = f"Updated tags for memory {memory_id}\n"
+                formatted += f"All tags: {', '.join(result['tags'])}\n"
+                if result.get('added'):
+                    formatted += f"Added: {', '.join(result['added'])}\n"
+                if result.get('existing'):
+                    formatted += f"Already had: {', '.join(result['existing'])}"
+                return [TextContent(type="text", text=formatted)]
+            else:
+                return [TextContent(type="text", text=f"Failed: {result.get('error', 'Unknown error')}")]
+
+        elif name == "search_by_tag":
+            tag = arguments["tag"]
+            user_id = arguments.get("user_id")
+            limit = arguments.get("limit", 20)
+            sort_by = arguments.get("sort_by", "created_at")
+
+            logger.info(f"Searching memories by tag: {tag}")
+            results = await memory_engine.search_by_tag(
+                tag=tag,
+                limit=limit,
+                user_id=user_id,
+                sort_by=sort_by
+            )
+
+            if not results:
+                return [TextContent(type="text", text=f"No memories found with tag '{tag}'")]
+
+            formatted = f"MEMORIES WITH TAG '{tag}':\n"
+            for i, m in enumerate(results, 1):
+                formatted += f"\n{i}. {m['content']}\n"
+                if m.get('category'):
+                    formatted += f"   Category: {m['category']}"
+                if m.get('importance'):
+                    formatted += f" | Importance: {m['importance']}/10"
+                formatted += f"\n   Tags: {', '.join(m.get('tags', []))}\n"
+
+            return [TextContent(type="text", text=formatted)]
+
+        elif name == "set_memory_importance":
+            memory_id = arguments["memory_id"]
+            importance = arguments["importance"]
+
+            logger.info(f"Setting importance for memory {memory_id}: {importance}")
+            result = await memory_engine.update_memory_importance(
+                memory_id=memory_id,
+                importance=importance
+            )
+
+            if result.get("success"):
+                return [TextContent(
+                    type="text",
+                    text=f"Set importance to {importance}/10 for memory {memory_id}"
+                )]
+            else:
+                return [TextContent(type="text", text=f"Failed: {result.get('error', 'Unknown error')}")]
+
+        elif name == "pin_memory":
+            memory_id = arguments["memory_id"]
+
+            logger.info(f"Pinning memory {memory_id}")
+            result = await memory_engine.pin_memory(memory_id=memory_id)
+
+            if result.get("success"):
+                return [TextContent(
+                    type="text",
+                    text=f"Pinned memory {memory_id} - it will always be included in searches"
+                )]
+            else:
+                return [TextContent(type="text", text=f"Failed: {result.get('error', 'Unknown error')}")]
+
+        elif name == "archive_memory":
+            memory_id = arguments["memory_id"]
+
+            logger.info(f"Archiving memory {memory_id}")
+            result = await memory_engine.archive_memory(memory_id=memory_id)
+
+            if result.get("success"):
+                return [TextContent(
+                    type="text",
+                    text=f"Archived memory {memory_id} - it will be hidden from normal searches"
+                )]
+            else:
+                return [TextContent(type="text", text=f"Failed: {result.get('error', 'Unknown error')}")]
 
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]

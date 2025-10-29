@@ -155,23 +155,61 @@ class MemoryEngine:
 
         return stored
     
-    async def get_recent(self, limit: int = 10, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get most recent memories"""
+    async def get_recent(
+        self,
+        limit: int = 10,
+        user_id: Optional[str] = None,
+        since: Optional[str] = None,
+        before: Optional[str] = None,
+        include_archived: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Get most recent memories with optional date filtering"""
         try:
+            from datetime import datetime
+
             all_mems = await self._get_all_memories(user_id=user_id)
-            # Sort by timestamp descending
-            all_mems.sort(key=lambda x: x["metadata"].get("timestamp", ""), reverse=True)
+
+            # Filter by date range if specified
+            filtered = []
+            for mem in all_mems:
+                # Skip archived unless explicitly included
+                if not include_archived and mem["metadata"].get("archived", False):
+                    continue
+
+                timestamp = mem["metadata"].get("timestamp", "")
+
+                # Apply date filters
+                if since and timestamp < since:
+                    continue
+                if before and timestamp > before:
+                    continue
+
+                filtered.append(mem)
+
+            # Sort by timestamp descending (newest first)
+            filtered.sort(key=lambda x: x["metadata"].get("timestamp", ""), reverse=True)
 
             recent = []
-            for mem in all_mems[:limit]:
+            for mem in filtered[:limit]:
+                # Handle tags (backwards compatible with both string and array)
                 tags_raw = mem["metadata"].get("tags", "")
                 tags = tags_raw if isinstance(tags_raw, list) else (tags_raw.split(",") if tags_raw else [])
+
                 recent.append({
                     "id": mem["id"],
                     "content": mem["metadata"].get("content", ""),
                     "tags": tags,
+                    "category": mem["metadata"].get("category"),
                     "confidence": mem["metadata"].get("confidence", 0.5),
-                    "timestamp": mem["metadata"].get("timestamp", ""),
+                    "importance": mem["metadata"].get("importance"),
+                    "pinned": mem["metadata"].get("pinned", False),
+                    "archived": mem["metadata"].get("archived", False),
+                    "sentiment": mem["metadata"].get("sentiment"),
+                    "word_count": mem["metadata"].get("word_count"),
+                    "timestamp": timestamp,
+                    "created_at": mem["metadata"].get("created_at"),
+                    "updated_at": mem["metadata"].get("updated_at"),
+                    "event_date": mem["metadata"].get("event_date"),
                     "user_id": mem["metadata"].get("user_id")
                 })
 
@@ -179,6 +217,263 @@ class MemoryEngine:
         except Exception as e:
             logger.error(f"Failed to get recent memories: {e}")
             return []
+
+    async def get_all_tags(
+        self,
+        user_id: Optional[str] = None,
+        min_count: int = 1,
+        sort_by: str = "count"
+    ) -> List[Dict[str, Any]]:
+        """Get all unique tags with usage counts"""
+        try:
+            all_mems = await self._get_all_memories(user_id=user_id)
+
+            # Aggregate tags
+            tag_counts = {}
+            for mem in all_mems:
+                # Skip archived memories
+                if mem["metadata"].get("archived", False):
+                    continue
+
+                tags_raw = mem["metadata"].get("tags", "")
+                tags = tags_raw if isinstance(tags_raw, list) else (tags_raw.split(",") if tags_raw else [])
+
+                for tag in tags:
+                    tag = tag.strip()
+                    if tag:
+                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+            # Filter by min_count and format
+            result = [
+                {"name": tag, "count": count}
+                for tag, count in tag_counts.items()
+                if count >= min_count
+            ]
+
+            # Sort by count (descending) or name (alphabetical)
+            if sort_by == "name":
+                result.sort(key=lambda x: x["name"])
+            else:  # sort_by == "count"
+                result.sort(key=lambda x: x["count"], reverse=True)
+
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get all tags: {e}")
+            return []
+
+    async def add_tags_to_memory(
+        self,
+        memory_id: str,
+        tags: List[str],
+        replace: bool = False
+    ) -> Dict[str, Any]:
+        """Add or replace tags on an existing memory"""
+        try:
+            # Fetch the memory
+            result = self.index.fetch(ids=[memory_id])
+
+            if not result or "vectors" not in result or memory_id not in result["vectors"]:
+                logger.error(f"Memory {memory_id} not found")
+                return {"success": False, "error": "Memory not found"}
+
+            mem = result["vectors"][memory_id]
+            metadata = mem["metadata"]
+
+            # Get existing tags
+            existing_tags_raw = metadata.get("tags", "")
+            if isinstance(existing_tags_raw, list):
+                existing_tags = existing_tags_raw
+            else:
+                existing_tags = existing_tags_raw.split(",") if existing_tags_raw else []
+
+            # Update tags
+            if replace:
+                new_tags = tags
+            else:
+                # Merge with existing, remove duplicates
+                new_tags = list(set(existing_tags + tags))
+
+            # Update metadata
+            metadata["tags"] = new_tags
+            metadata["updated_at"] = datetime.now().isoformat()
+
+            # Upsert back to Pinecone
+            self.index.upsert(
+                vectors=[(memory_id, mem["values"], metadata)]
+            )
+
+            logger.info(f"Updated tags for memory {memory_id}: {new_tags}")
+
+            return {
+                "success": True,
+                "memory_id": memory_id,
+                "tags": new_tags,
+                "added": list(set(tags) - set(existing_tags)) if not replace else tags,
+                "existing": list(set(tags) & set(existing_tags)) if not replace else []
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to add tags to memory: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    async def search_by_tag(
+        self,
+        tag: str,
+        limit: int = 20,
+        user_id: Optional[str] = None,
+        sort_by: str = "created_at"
+    ) -> List[Dict[str, Any]]:
+        """Get all memories with a specific tag"""
+        try:
+            all_mems = await self._get_all_memories(user_id=user_id)
+
+            # Filter by tag
+            tagged = []
+            for mem in all_mems:
+                # Skip archived
+                if mem["metadata"].get("archived", False):
+                    continue
+
+                tags_raw = mem["metadata"].get("tags", "")
+                tags = tags_raw if isinstance(tags_raw, list) else (tags_raw.split(",") if tags_raw else [])
+                tags = [t.strip().lower() for t in tags]
+
+                if tag.lower() in tags:
+                    tags_raw = mem["metadata"].get("tags", "")
+                    tags_display = tags_raw if isinstance(tags_raw, list) else (tags_raw.split(",") if tags_raw else [])
+
+                    tagged.append({
+                        "id": mem["id"],
+                        "content": mem["metadata"].get("content", ""),
+                        "tags": tags_display,
+                        "category": mem["metadata"].get("category"),
+                        "importance": mem["metadata"].get("importance"),
+                        "confidence": mem["metadata"].get("confidence", 0.5),
+                        "sentiment": mem["metadata"].get("sentiment"),
+                        "timestamp": mem["metadata"].get("timestamp", ""),
+                        "created_at": mem["metadata"].get("created_at"),
+                        "user_id": mem["metadata"].get("user_id")
+                    })
+
+            # Sort
+            if sort_by == "importance":
+                tagged.sort(key=lambda x: x.get("importance") or 0, reverse=True)
+            else:  # created_at (default)
+                tagged.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+            return tagged[:limit]
+        except Exception as e:
+            logger.error(f"Failed to search by tag: {e}")
+            return []
+
+    async def update_memory_importance(
+        self,
+        memory_id: str,
+        importance: int
+    ) -> Dict[str, Any]:
+        """Set importance score for a memory"""
+        try:
+            if not 1 <= importance <= 10:
+                return {"success": False, "error": "Importance must be between 1 and 10"}
+
+            # Fetch the memory
+            result = self.index.fetch(ids=[memory_id])
+
+            if not result or "vectors" not in result or memory_id not in result["vectors"]:
+                logger.error(f"Memory {memory_id} not found")
+                return {"success": False, "error": "Memory not found"}
+
+            mem = result["vectors"][memory_id]
+            metadata = mem["metadata"]
+
+            # Update importance
+            metadata["importance"] = importance
+            metadata["updated_at"] = datetime.now().isoformat()
+
+            # Upsert back to Pinecone
+            self.index.upsert(
+                vectors=[(memory_id, mem["values"], metadata)]
+            )
+
+            logger.info(f"Updated importance for memory {memory_id}: {importance}")
+
+            return {
+                "success": True,
+                "memory_id": memory_id,
+                "importance": importance
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to update importance: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    async def pin_memory(self, memory_id: str) -> Dict[str, Any]:
+        """Pin a memory to always include it"""
+        try:
+            # Fetch the memory
+            result = self.index.fetch(ids=[memory_id])
+
+            if not result or "vectors" not in result or memory_id not in result["vectors"]:
+                logger.error(f"Memory {memory_id} not found")
+                return {"success": False, "error": "Memory not found"}
+
+            mem = result["vectors"][memory_id]
+            metadata = mem["metadata"]
+
+            # Pin it
+            metadata["pinned"] = True
+            metadata["updated_at"] = datetime.now().isoformat()
+
+            # Upsert back to Pinecone
+            self.index.upsert(
+                vectors=[(memory_id, mem["values"], metadata)]
+            )
+
+            logger.info(f"Pinned memory {memory_id}")
+
+            return {
+                "success": True,
+                "memory_id": memory_id,
+                "pinned": True
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to pin memory: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    async def archive_memory(self, memory_id: str) -> Dict[str, Any]:
+        """Archive a memory (soft delete)"""
+        try:
+            # Fetch the memory
+            result = self.index.fetch(ids=[memory_id])
+
+            if not result or "vectors" not in result or memory_id not in result["vectors"]:
+                logger.error(f"Memory {memory_id} not found")
+                return {"success": False, "error": "Memory not found"}
+
+            mem = result["vectors"][memory_id]
+            metadata = mem["metadata"]
+
+            # Archive it
+            metadata["archived"] = True
+            metadata["updated_at"] = datetime.now().isoformat()
+
+            # Upsert back to Pinecone
+            self.index.upsert(
+                vectors=[(memory_id, mem["values"], metadata)]
+            )
+
+            logger.info(f"Archived memory {memory_id}")
+
+            return {
+                "success": True,
+                "memory_id": memory_id,
+                "archived": True
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to archive memory: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
 
     async def _extract_memories(
         self,
@@ -205,8 +500,35 @@ CRITICAL OUTPUT REQUIREMENTS:
 
 Each memory object MUST have:
 - "content": the extracted user-specific fact (string)
-- "tags": array of relevant tags from: identity, preference, goal, relationship, possession, behavior
+- "tags": array of relevant tags (e.g., ["homelab", "technical", "family"])
 - "confidence": score from 0.0 to 1.0 indicating certainty
+- "category": ONE category from the list below (REQUIRED)
+- "importance": integer from 1-10 indicating significance (REQUIRED)
+- "sentiment": ONE of: positive, negative, neutral, mixed (REQUIRED)
+
+CATEGORIZATION (choose ONE):
+- "achievement": Completed tasks, successes, victories, solved problems
+- "frustration": Problems, failures, issues, roadblocks
+- "idea": Thoughts, plans, possibilities, future considerations
+- "fact": Factual information about user (name, location, possessions)
+- "event": Things that happened, meetings, activities
+- "conversation": Discussion topics, things mentioned
+- "relationship": Information about people, connections, family
+- "technical": Code, systems, infrastructure, tools, technology
+- "personal": Family, hobbies, interests, daily life
+- "misc": Everything else that doesn't fit above
+
+IMPORTANCE SCORING (1-10):
+- 1-3: Low - Minor details, trivial facts, passing mentions
+- 4-6: Medium - Useful information, regular preferences, typical activities
+- 7-8: High - Important facts, strong preferences, key relationships, significant events
+- 9-10: Critical - Core identity, mission-critical information, deeply held values
+
+SENTIMENT ANALYSIS:
+- "positive": Achievements, good news, preferences, successes, joy
+- "negative": Frustrations, problems, dislikes, failures, anger
+- "neutral": Facts, observations, routine information
+- "mixed": Complex feelings, both good and bad aspects
 
 EXTRACT:
 - Explicit user preferences ("I love X", "My favorite is Y")
@@ -215,6 +537,8 @@ EXTRACT:
 - Relationships (family, friends, colleagues)
 - Possessions (things owned or desired)
 - Behavioral patterns and interests
+- Achievements and victories
+- Frustrations and problems
 
 DO NOT EXTRACT:
 - General knowledge or trivia
@@ -225,14 +549,28 @@ DO NOT EXTRACT:
 EXAMPLE OUTPUT:
 [
   {{
+    "content": "User fixed BADBUNNY PSU issue after 2 hours of troubleshooting",
+    "tags": ["homelab", "technical", "hardware", "BADBUNNY"],
+    "category": "achievement",
+    "importance": 8,
+    "sentiment": "positive",
+    "confidence": 0.95
+  }},
+  {{
     "content": "User has a cat named Whiskers",
-    "tags": ["relationship", "possession"],
+    "tags": ["relationship", "possession", "pets"],
+    "category": "fact",
+    "importance": 6,
+    "sentiment": "neutral",
     "confidence": 0.9
   }},
   {{
-    "content": "User prefers working remotely",
-    "tags": ["preference", "behavior"],
-    "confidence": 0.75
+    "content": "User frustrated with network connectivity issues",
+    "tags": ["technical", "network", "problem"],
+    "category": "frustration",
+    "importance": 7,
+    "sentiment": "negative",
+    "confidence": 0.85
   }}
 ]
 
@@ -284,19 +622,34 @@ Return ONLY the JSON array. No other text."""
                 if not isinstance(mem, dict):
                     logger.warning(f"Skipping non-dict memory: {mem}")
                     continue
-                
+
                 if "content" not in mem or not mem["content"]:
                     logger.warning(f"Skipping memory without content: {mem}")
                     continue
-                
+
+                # Ensure tags is a list
                 if "tags" not in mem:
-                    mem["tags"] = ["behavior"]
+                    mem["tags"] = []
                 elif not isinstance(mem["tags"], list):
                     mem["tags"] = [str(mem["tags"])]
-                
+
+                # Set defaults for existing fields
                 if "confidence" not in mem:
                     mem["confidence"] = 0.5
-                
+
+                # Set defaults for v2.0 fields
+                if "category" not in mem:
+                    mem["category"] = "misc"  # Default category
+
+                if "importance" not in mem:
+                    mem["importance"] = 5  # Default to medium importance
+
+                if "sentiment" not in mem:
+                    mem["sentiment"] = "neutral"  # Default sentiment
+
+                # Calculate word count
+                mem["word_count"] = len(mem["content"].split())
+
                 valid_memories.append(mem)
             
             logger.info(f"Validated {len(valid_memories)}/{len(memories)} extracted memories")
@@ -413,13 +766,37 @@ Return ONLY the JSON array. No other text."""
         content_hash = abs(hash(content)) % 10000
         memory_id = f"mem_{timestamp}_{content_hash}"
 
+        # Build enhanced metadata for v2.0
+        now = datetime.now().isoformat()
+        tags = memory.get("tags", [])
+
         metadata = {
+            # Core fields
             "content": content,
-            "tags": ",".join(memory.get("tags", [])),
             "confidence": float(memory.get("confidence", 0.5)),
-            "timestamp": datetime.now().isoformat(),
-            "created_at": datetime.now().isoformat()
+            "timestamp": now,
+            "created_at": now,
+            "updated_at": now,
+
+            # V2.0 additions - Categorization
+            "tags": tags if isinstance(tags, list) else [],  # Store as array
+            "category": memory.get("category"),  # Optional: achievement, frustration, idea, fact, event, conversation, relationship, technical, personal, misc
+
+            # V2.0 additions - Quality/Importance
+            "importance": memory.get("importance"),  # Optional: 1-10 scale
+            "pinned": memory.get("pinned", False),
+            "archived": memory.get("archived", False),
+
+            # V2.0 additions - Content analysis
+            "word_count": memory.get("word_count"),
+            "sentiment": memory.get("sentiment"),  # Optional: positive, negative, neutral, mixed
+
+            # V2.0 additions - Temporal
+            "event_date": memory.get("event_date")  # Optional: When event actually occurred
         }
+
+        # Remove None values to keep metadata clean
+        metadata = {k: v for k, v in metadata.items() if v is not None}
 
         # Add optional identifiers
         if user_id:
@@ -439,9 +816,18 @@ Return ONLY the JSON array. No other text."""
             return {
                 "id": memory_id,
                 "content": content,
-                "tags": memory.get("tags", []),
-                "confidence": memory.get("confidence", 0.5),
+                "tags": metadata.get("tags", []),
+                "category": metadata.get("category"),
+                "confidence": metadata.get("confidence", 0.5),
+                "importance": metadata.get("importance"),
+                "pinned": metadata.get("pinned", False),
+                "archived": metadata.get("archived", False),
+                "sentiment": metadata.get("sentiment"),
+                "word_count": metadata.get("word_count"),
                 "timestamp": metadata["timestamp"],
+                "created_at": metadata["created_at"],
+                "updated_at": metadata["updated_at"],
+                "event_date": metadata.get("event_date"),
                 "user_id": user_id,
                 "agent_id": agent_id,
                 "run_id": run_id
@@ -588,21 +974,82 @@ Return ONLY the JSON array. No other text."""
                     success_count += 1
         return success_count
 
-    async def get_stats(self) -> Dict[str, Any]:
-        """Get memory statistics"""
+    async def get_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get memory statistics including v2.0 metadata breakdown"""
         try:
+            # Get basic Pinecone stats
             stats = self.index.describe_index_stats()
+            total_count = stats.total_vector_count
+
+            # Get detailed metadata statistics
+            all_mems = await self._get_all_memories(user_id=user_id)
+
+            # Count by category
+            category_counts = {}
+            importance_counts = {i: 0 for i in range(1, 11)}  # 1-10
+            sentiment_counts = {}
+            pinned_count = 0
+            archived_count = 0
+            tag_counts = {}
+
+            for mem in all_mems:
+                metadata = mem.get("metadata", {})
+
+                # Category
+                category = metadata.get("category")
+                if category:
+                    category_counts[category] = category_counts.get(category, 0) + 1
+
+                # Importance
+                importance = metadata.get("importance")
+                if importance and 1 <= importance <= 10:
+                    importance_counts[importance] += 1
+
+                # Sentiment
+                sentiment = metadata.get("sentiment")
+                if sentiment:
+                    sentiment_counts[sentiment] = sentiment_counts.get(sentiment, 0) + 1
+
+                # Flags
+                if metadata.get("pinned"):
+                    pinned_count += 1
+                if metadata.get("archived"):
+                    archived_count += 1
+
+                # Tags
+                tags_raw = metadata.get("tags", "")
+                tags = tags_raw if isinstance(tags_raw, list) else (tags_raw.split(",") if tags_raw else [])
+                for tag in tags:
+                    tag = tag.strip()
+                    if tag:
+                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+            # Top 10 tags
+            top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
             return {
-                "count": stats.total_vector_count,
+                "count": total_count,
                 "dimension": stats.dimension,
-                "max_memories": settings.MAX_MEMORIES
+                "max_memories": settings.MAX_MEMORIES,
+                "utilization_pct": round((total_count / settings.MAX_MEMORIES) * 100, 1) if settings.MAX_MEMORIES > 0 else 0,
+
+                # V2.0 statistics
+                "categories": category_counts,
+                "importance_distribution": {k: v for k, v in importance_counts.items() if v > 0},
+                "sentiment_distribution": sentiment_counts,
+                "pinned_count": pinned_count,
+                "archived_count": archived_count,
+                "active_count": len([m for m in all_mems if not m.get("metadata", {}).get("archived")]),
+                "top_tags": [{"name": tag, "count": count} for tag, count in top_tags],
+                "unique_tag_count": len(tag_counts)
             }
         except Exception as e:
-            logger.error(f"Stats retrieval failed: {e}")
+            logger.error(f"Stats retrieval failed: {e}", exc_info=True)
             return {
                 "count": 0,
                 "dimension": 0,
-                "max_memories": settings.MAX_MEMORIES
+                "max_memories": settings.MAX_MEMORIES,
+                "error": str(e)
             }
 
     async def _get_all_memories(
